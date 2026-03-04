@@ -12,14 +12,20 @@ import re
 # Permessi completi per lettura, scrittura ed eliminazione eventi
 SCOPES = ['https://www.googleapis.com/auth/calendar.events']
 
+# ✅ Cache globale del servizio — costruito una sola volta, evita discovery HTTP ad ogni chiamata
+_servizio_cache = None
+
 def ottieni_servizio_calendario():
+    global _servizio_cache
+
+    # Restituisce il servizio gia costruito — evita discovery HTTP ad ogni chiamata
+    if _servizio_cache is not None:
+        return _servizio_cache
+
     creds = None
-    # Il file token.json memorizza i token di accesso e di aggiornamento dopo il primo login
-    # e deve trovarsi nella root del progetto
     token_path = os.path.join('..', 'token.json')
     creds_path = os.path.join('..', 'credentials.json')
 
-    # Proviamo prima nella cartella base del terminale se presenti, altrimenti quelli nella root superiore.
     if os.path.exists('token.json'):
         token_path = 'token.json'
     if os.path.exists('credentials.json'):
@@ -36,8 +42,10 @@ def ottieni_servizio_calendario():
             creds = flow.run_local_server(port=0)
         with open(token_path, 'w') as token:
             token.write(creds.to_json())
-            
-    return build('calendar', 'v3', credentials=creds)
+
+    # Salva in cache — le chiamate successive non rifanno il discovery
+    _servizio_cache = build('calendar', 'v3', credentials=creds)
+    return _servizio_cache
 
 @tool
 def leggi_calendario(periodo_richiesto: str = "oggi") -> str:
