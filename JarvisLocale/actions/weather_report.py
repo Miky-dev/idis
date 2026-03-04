@@ -3,13 +3,14 @@ from urllib.parse import quote_plus
 from langchain_core.tools import tool
 
 @tool
-def weather_action(
+def mostra_meteo(
     city: str,
     time: str = "today"
 ) -> str:
     """
-    Weather report action.
-    Opens a Google weather search and returns a confirmation.
+    Mostra il report meteo per una città specifica.
+    Usa questo strumento SEMPRE quando l'utente chiede previsioni meteo, temperatura o tempo.
+    Apre una finestra del browser con i dettagli completi.
     """
 
     if not city or not isinstance(city, str):

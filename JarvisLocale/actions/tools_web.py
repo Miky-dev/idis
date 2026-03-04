@@ -76,11 +76,20 @@ def digita_nel_browser(ricerca: str) -> str:
 @tool
 def cerca_su_internet(query: str) -> str:
     """
-    Usa questo strumento SOLO per cercare su internet informazioni in tempo reale, notizie, eventi recenti o risposte a domande di cui non conosci la risposta (es. "chi ha vinto la partita", "notizie di oggi", "meteo", o fatti post-2023).
-    L'argomento 'query' deve essere una stringa di ricerca concisa in italiano (es. 'ultime notizie intelligenza artificiale').
-    Restituisce un riassunto dei risultati web.
+    Usa questo strumento SOLO per cercare su internet informazioni in tempo reale, notizie, eventi recenti o risposte a domande di cui non conosci la risposta (es. "chi ha vinto la partita", "notizie di oggi", o fatti post-2023).
+    NON USARE per il meteo (usa 'mostra_meteo').
+    L'argomento 'query' deve essere una stringa di ricerca.
     """
     try:
+        # Apri la pagina di ricerca nel browser per trasparenza
+        from urllib.parse import quote_plus
+        url_ricerca = f"https://duckduckgo.com/?q={quote_plus(query)}"
+        try:
+            browser = webbrowser.get('opera')
+        except:
+            browser = webbrowser.get()
+        browser.open(url_ricerca)
+
         risultati = ricerca_ddg.run(query)
         return f"Risultati dal web: {risultati}"
     except Exception as e:

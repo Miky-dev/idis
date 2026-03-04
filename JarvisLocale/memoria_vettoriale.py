@@ -48,30 +48,34 @@ def salva_ricordo(testo_ricordo):
         )
         print(f"💾 [MEMORIA VETTORIALE] Salvato: '{testo_ricordo}'")
 
-def estrai_ricordi_pertinenti(domanda_utente, max_risultati=2):
+def estrai_ricordi_pertinenti(domanda_utente, max_risultati=4, soglia_distanza=0.5):
     """
-    Quando l'utente fa una domanda, cerca i 2 ricordi matematicamente più vicini.
-    Restituisce una lista di stringhe.
+    Cerca i ricordi matematicamente più vicini e li filtra per rilevanza.
     """
-    # Se il database è vuoto, non cercare nulla
     if collezione_memoria.count() == 0:
         return []
         
     vettore_domanda = _calcola_vettore(f"search_query: {domanda_utente}")
     if vettore_domanda:
-        # Peschiamo i ricordi!
         risultati = collezione_memoria.query(
             query_embeddings=[vettore_domanda],
             n_results=min(max_risultati, collezione_memoria.count())
         )
-        # risultati['documents'][0] contiene la lista dei testi trovati
+        
         ricordi_trovati = risultati.get('documents', [[]])[0]
         distanze_trovate = risultati.get('distances', [[]])[0]
         
-        if ricordi_trovati:
-            print(f"🧠 [MEMORIA VETTORIALE] Ricordi ripescati: {ricordi_trovati}")
-            print(f"📏 [DISTANZE]: {distanze_trovate}")
-            return ricordi_trovati
+        # Filtriamo i ricordi in base alla distanza (più piccola = più pertinente)
+        ricordi_filtrati = []
+        for i in range(len(ricordi_trovati)):
+            if distanze_trovate[i] < soglia_distanza:
+                ricordi_filtrati.append(ricordi_trovati[i])
+        
+        if ricordi_filtrati:
+            print(f"🧠 [MEMORIA VETTORIALE] Ricordi pertinenti (<{soglia_distanza}): {ricordi_filtrati}")
+            return ricordi_filtrati
+        else:
+            print(f"⚠️ [MEMORIA VETTORIALE] Nessun ricordo abbastanza pertinente trovato (min dist: {min(distanze_trovate) if distanze_trovate else 'N/A'})")
             
     return []
 

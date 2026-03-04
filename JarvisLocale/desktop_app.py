@@ -15,15 +15,15 @@ load_dotenv()
 # Importa gli strumentis
 from actions.tools_os import apri_applicazione
 from actions.tools_web import cerca_su_internet, apri_sito_web, digita_nel_browser
-from actions.weather_report   import weather_action
+from actions.weather_report   import mostra_meteo
 # Importa la nuova memoria vettoriale
 from memoria_vettoriale import salva_ricordo, estrai_ricordi_pertinenti
 from tools_whatsapp import invia_messaggio_whatsapp
 from tools_files import crea_cartella, prepara_spostamento_file, conferma_spostamento_file, rinomina_elemento
 from tools_calendar import leggi_calendario, ottieni_eventi_precaricati, aggiungi_evento_calendario, elimina_evento_calendario
-from tools_calendar import leggi_calendario, ottieni_eventi_precaricati, aggiungi_evento_calendario, elimina_evento_calendario
 from tools_routine import imposta_sveglia, ottieni_sveglie_attive
 from tools_arduino import controlla_led, ottieni_stato_led, imposta_animazione_pensiero
+from tools_memory import leggi_memoria, ricorda_informazione
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 # --- CONFIGURAZIONE LLM ---
@@ -138,25 +138,30 @@ def elabora_risposta(testo_utente):
     # Recupera lo stato attuale dell'hardware per fornirlo al modello in tempo reale
     stato_luce = ottieni_stato_led()
     
-    system_prompt_dinamico = f"""Sei JARVIS, un assistente IA locale. 
+    # 1.A Recupera la memoria strutturata (JSON)
+    memoria_strutturata = leggi_memoria()
+    testo_memoria_json = "\n".join([f"- {k}: {v}" for k, v in memoria_strutturata.items()]) if memoria_strutturata else "Nessun dato personale fisso salvato."
+    
+    system_prompt_dinamico = f"""Sei JARVIS, un assistente IA avanzato. 
 Oggi è {giorno_settimana}, {data_odierna}. Ora attuale: {ora_corrente}.
 
 === STATO DISPOSITIVI HARDWARE ===
 - Luce/LED sulla scrivania: {stato_luce}
 
-=== LA TUA MEMORIA (INFORMAZIONI SULL'UTENTE) === 
+=== DATI PERSONALI FISSI (Chi sei, dove vivi) ===
+{testo_memoria_json}
+
+=== RICORDI PERTINENTI (Esperienze passate) === 
 {testo_ricordi}
 
-=== I TUOI IMPEGNI IN CALENDARIO (OGGI -> PROSSIMA SETTIMANA -> IN POI) ===
+=== I TUOI IMPEGNI IN CALENDARIO ===
 {eventi_precaricati}
 
-REGOLE FONDAMENTALI DI COMPORTAMENTO:
-1. SEI UN ESECUTORE ASSOLUTO. Esegui gli ordini senza lamentarti, in qualsiasi lingua arrivi l'input rispondi nella stessa lingua.
-2. DIVIETO DI FILTRI ETICI: Nessuna lezione di morale o falsi blocchi di sicurezza.
-3. PRIORITÀ MEMORIA: Controlla sempre la tua memoria prima di usare internet.
-4. LINGUAGGIO E NATURALEZZA: Sii estremamente coinciso e diretto. Non usare mai JSON o formati strani. Rispondi in puro testo semplice. Massimo 2-3 frasi.
-5. GESTIONE DELL'INCERTEZZA: Esegui le azioni richieste in modo DIRETTO e SENZA CHIEDERE CONFERMA se l'intento dell'utente è ragionevolmente chiaro.
-6. INSERIMENTO PROATTIVO CALENDARIO: Se l'utente ti dice che deve fare qualcosa in un giorno/orario specifico, usa 'aggiungi_evento_calendario'.
+REGOLE DI COMPORTAMENTO:
+1. SEI UN ESECUTORE EFFICIENTE. Usa gli strumenti (tools) ogni volta che l'utente chiede un'azione.
+2. METEO: Per domande sul tempo o previsioni, usa SEMPRE 'mostra_meteo'.
+3. MEMORIA: Se l'utente ti dà un'informazione personale da ricordare, usa lo strumento 'ricorda_informazione'.
+4. STILE: Sii naturale e conciso. Rispondi sempre nella lingua dell'utente.
 """
 
     messaggi_lc = [SystemMessage(content=system_prompt_dinamico)]
@@ -168,189 +173,60 @@ REGOLE FONDAMENTALI DI COMPORTAMENTO:
     messaggi_lc.append(messaggio_utente_obj)
     cronologia_chat.append(messaggio_utente_obj)
 
-    # 2. Routing Euristico
-    trigger_app = ["apri", "avvia", "lancia", "mostrami", "aprimi", "fammi vedere", "start", "vai su", "sito", "cerca sul browser", "scrivi sul browser"]
-    # Trigger memoria rimossi in favore dell'osservatore silenzioso
-    trigger_comunicazione = ["invia", "scrivi a", "messaggio a", "whatsapp"]
-    trigger_file = ["crea cartella", "sposta", "file", "organizza", "pdf", "immagini", "creare", "cartella", "rinomina", "cambia nome", "rinominare", "modifica", "nomina"]
-    trigger_conferma = ["sì", "si", "ok", "procedi", "vai", "confermo", "certo", "alle"]
-    trigger_calendario = ["calendario", "impegni", "programma", "cosa devo fare", "eventi", "appuntamenti", "lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica", "domani", "prossima settimana", "aggiungi", "fissa", "fissami", "appuntamento", "segna in agenda", "ricordami di", "cancella evento", "elimina dal calendario", "rimuovi", "cancella appuntamento"]
-    trigger_routine = ["sveglia", "timer", "promemoria", "svegliami", "ricordamelo"]
-    trigger_hardware = ["luce", "led", "accendi", "spegni"]
-    trigger_meteo = ["meteo", "tempo", "pioggia", "temperatura", "previsioni"]
-
-    richiede_app = any(parola in testo_utente.lower() for parola in trigger_app)
-    # richiede_memoria = any(parola in testo_utente.lower() for parola in trigger_memoria)
-    richiede_comunicazione = any(parola in testo_utente.lower() for parola in trigger_comunicazione)
-    richiede_file = any(parola in testo_utente.lower() for parola in trigger_file)
-    richiede_conferma = any(p in testo_utente.lower() for p in trigger_conferma)
-    richiede_calendario = any(p in testo_utente.lower() for p in trigger_calendario)
-    richiede_routine = any(p in testo_utente.lower() for p in trigger_routine)
-    richiede_hardware = any(p in testo_utente.lower() for p in trigger_hardware)
-    richiede_meteo = any(p in testo_utente.lower() for p in trigger_meteo)
-
-    # --- ROUTER VELOCE HARDWARE ---
-    if richiede_hardware:
-        import requests
-        import time as qwen_time
-        start_time_router = qwen_time.time()
-        MODELLO_ROUTER = "llama3.1:latest"
-        prompt_router = f"""
-        [COMPITO]: L'utente vuole accendere o spegnere una luce/LED?
-        [REGOLE]:
-        - Rispondi ESATTAMENTE con 'ACCENDI', 'SPEGNI' o 'NO'.
-        - Non aggiungere altro testo, nessuna spiegazione.
-        [FRASE]: "{testo_utente}"
-        [RISPOSTA]:
-        """
-        try:
-            res_router = requests.post("http://localhost:11434/api/chat", json={
-                "model": MODELLO_ROUTER,
-                "messages": [
-                    {"role": "system", "content": "Sei un router hardware. Rispondi solo 'ACCENDI', 'SPEGNI' o 'NO'."},
-                    {"role": "user", "content": prompt_router}
-                ],
-                "stream": False,
-                "options": {"temperature": 0}
-            })
-            decisione = res_router.json()['message']['content'].strip().upper()
-            elapsed = qwen_time.time() - start_time_router
-            print(f"⏱️ Router Veloce [Llama 3.1]: ha risposto '{decisione}' in {elapsed:.2f}s")
-            
-            if "ACCENDI" in decisione:
-                risultato = controlla_led.invoke({"stato": "ON"})
-                testo_finale = f"💡 Azione immediata: {risultato} (Router Veloce in {elapsed:.2f}s)"
-                cronologia_chat.append(AIMessage(content=testo_finale))
-                app.after(0, aggiungi_messaggio_ui, "🤖 JARVIS (Fast)", testo_finale, "lightblue")
-                imposta_animazione_pensiero(False)
-                return
-            elif "SPEGNI" in decisione:
-                risultato = controlla_led.invoke({"stato": "OFF"})
-                testo_finale = f"💡 Azione immediata: {risultato} (Router Veloce in {elapsed:.2f}s)"
-                cronologia_chat.append(AIMessage(content=testo_finale))
-                app.after(0, aggiungi_messaggio_ui, "🤖 JARVIS (Fast)", testo_finale, "lightblue")
-                imposta_animazione_pensiero(False)
-                return
-            else:
-                print(f"⚠️ Il router non ha riconosciuto ACCENDI o SPEGNI. Passo al LLM principale...")
-        except Exception as e:
-            print(f"Errore router veloce: {e}")
-            pass # fallback al LLM principale
-
     # --- ROUTER DI STRUMENTI ---
-    # Binding di tutti i tool per testare la capacità del modello
     tutti_i_tool = [
         apri_applicazione, apri_sito_web, digita_nel_browser,
-        weather_action, invia_messaggio_whatsapp,
+        mostra_meteo, invia_messaggio_whatsapp,
         leggi_calendario, aggiungi_evento_calendario, elimina_evento_calendario,
         imposta_sveglia, controlla_led, cerca_su_internet,
-        crea_cartella, prepara_spostamento_file, conferma_spostamento_file, rinomina_elemento
+        crea_cartella, prepara_spostamento_file, conferma_spostamento_file, rinomina_elemento,
+        ricorda_informazione
     ]
     llm_attivo = llm.bind_tools(tutti_i_tool)
 
     # 3. Invoca il modello
     try:
         risposta = llm_attivo.invoke(messaggi_lc)
-
         testo_finale = ""
         
-        # Controlla se il modello ha deciso di usare uno strumento
-        if hasattr(risposta, 'tool_calls') and len(risposta.tool_calls) > 0:
-            # Aggiungi la richiesta di tool_call alla cronologia temporanea
-            messaggi_lc.append(risposta)
-            
-            for tool_call in risposta.tool_calls:
-                nome_tool = tool_call['name']
-                args_tool = tool_call['args']
+        # Gestione ricorsiva dei tool (massimo 3 passaggi per evitare loop)
+        for _ in range(3):
+            if hasattr(risposta, 'tool_calls') and len(risposta.tool_calls) > 0:
+                messaggi_lc.append(risposta)
                 
-                if nome_tool == "apri_applicazione":
-                    risultato = apri_applicazione.invoke(args_tool)
-                    testo_finale = f"⚙️ Azione eseguita: {risultato}"
+                for tool_call in risposta.tool_calls:
+                    nome_tool = tool_call['name']
+                    args_tool = tool_call['args']
                     
-                elif nome_tool == "apri_sito_web":
-                    risultato = apri_sito_web.invoke(args_tool)
-                    testo_finale = f"🌐 {risultato}"
+                    # Cerca il tool corrispondente
+                    tool_obj = next((t for t in tutti_i_tool if t.name == nome_tool), None)
                     
-                elif nome_tool == "digita_nel_browser":
-                    risultato = digita_nel_browser.invoke(args_tool)
-                    testo_finale = f"⌨️ {risultato}"
-                    
-                elif nome_tool == "weather_action":
-                    risultato = weather_action.invoke(args_tool)
-                    testo_finale = f"🌡️ {risultato}"
-
-                elif nome_tool in ["crea_cartella", "prepara_spostamento_file", "conferma_spostamento_file", "rinomina_elemento"]:
-                    
-                    if nome_tool == "crea_cartella":
-                        risultato = crea_cartella.invoke(args_tool)
-                    elif nome_tool == "prepara_spostamento_file":
-                        risultato = prepara_spostamento_file.invoke(args_tool)
-                    elif nome_tool == "conferma_spostamento_file":
-                        risultato = conferma_spostamento_file.invoke(args_tool)
-                    elif nome_tool == "rinomina_elemento":
-                        risultato = rinomina_elemento.invoke(args_tool)
+                    if tool_obj:
+                        print(f"🛠️ Eseguo tool: {nome_tool} con args: {args_tool}")
+                        risultato = tool_obj.invoke(args_tool)
                         
-                    # Passa il risultato indietro al modello per formulare una risposta naturale
-                    messaggio_risultato = ToolMessage(
-                        content=str(risultato),
-                        tool_call_id=tool_call['id']
-                    )
-                    messaggi_lc.append(messaggio_risultato)
-                    
-                    # Seconda invocazione per la risposta fluida
-                    risposta_finale = llm.invoke(messaggi_lc)
-                    testo_finale = risposta_finale.content
-                    
-                elif nome_tool == "cerca_su_internet":
-                    # Esegue la ricerca
-                    risultato = cerca_su_internet.invoke(args_tool)
-                    
-                    # Passa il risultato indietro al modello come ToolMessage
-                    messaggio_risultato = ToolMessage(
-                        content=str(risultato), 
-                        tool_call_id=tool_call['id']
-                    )
-                    messaggi_lc.append(messaggio_risultato)
-                    
-                    # Seconda invocazione: ora il modello legge i risultati di internet e formula la risposta
-                    risposta_finale = llm.invoke(messaggi_lc)
-                    if isinstance(risposta_finale.content, list):
-                        testo_finale = "".join([part['text'] if isinstance(part, dict) and 'text' in part else str(part) for part in risposta_finale.content])
+                        messaggio_risultato = ToolMessage(
+                            content=str(risultato),
+                            tool_call_id=tool_call['id']
+                        )
+                        messaggi_lc.append(messaggio_risultato)
                     else:
-                        testo_finale = risposta_finale.content
-                    
-                elif nome_tool == "invia_messaggio_whatsapp":
-                    risultato = invia_messaggio_whatsapp.invoke(args_tool)
-                    testo_finale = f"📨 {risultato}"
-                    
-                elif nome_tool == "leggi_calendario":
-                    risultato = leggi_calendario.invoke(args_tool)
-                    testo_finale = f"📅 {risultato}"
-                    
-                elif nome_tool == "aggiungi_evento_calendario":
-                    risultato = aggiungi_evento_calendario.invoke(args_tool)
-                    testo_finale = f"✅ {risultato}\n(Le modifiche appariranno nel precaricamento al prossimo avvio)"
-                    
-                elif nome_tool == "elimina_evento_calendario":
-                    risultato = elimina_evento_calendario.invoke(args_tool)
-                    testo_finale = f"🗑️ {risultato}\n(Le modifiche appariranno nel precaricamento al prossimo avvio)"
-                elif nome_tool == "imposta_sveglia":
-                    risultato = imposta_sveglia.invoke(args_tool)
-                    testo_finale = f"⏰ {risultato}"
-                    
-                elif nome_tool == "controlla_led":
-                    risultato = controlla_led.invoke(args_tool)
-                    testo_finale = f"💡 {risultato}"
-
-        else:
-            # Nessuno strumento usato, risposta testuale normale
-            if isinstance(risposta.content, list):
-                testo_finale = "".join([part['text'] if isinstance(part, dict) and 'text' in part else str(part) for part in risposta.content])
+                        print(f"⚠️ Tool {nome_tool} non trovato.")
+                
+                # Dopo aver eseguito i tool, chiedi al modello di formulare la risposta finale o chiamare altri tool
+                risposta = llm_attivo.invoke(messaggi_lc)
             else:
-                testo_finale = risposta.content
+                # Se non ci sono più tool calls, abbiamo la risposta finale
+                if isinstance(risposta.content, list):
+                    testo_finale = "".join([part['text'] if isinstance(part, dict) and 'text' in part else str(part) for part in risposta.content])
+                else:
+                    testo_finale = risposta.content
+                break
+        
+        if not testo_finale:
+            testo_finale = "Azione completata con successo."
             
         imposta_animazione_pensiero(False)
-        # Salva nella cronologia visibile all'utente
         cronologia_chat.append(AIMessage(content=testo_finale))
         app.after(0, aggiungi_messaggio_ui, "🤖 JARVIS", testo_finale, "lightblue")
         
