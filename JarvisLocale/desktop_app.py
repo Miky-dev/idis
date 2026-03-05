@@ -20,8 +20,9 @@ except:
 from actions.tools_os import apri_applicazione
 from actions.tools_web import cerca_su_internet, apri_sito_web, digita_nel_browser
 from actions.weather_report import mostra_meteo
+from actions.tools_spotify import riproduci_canzone, riproduci_playlist, controlla_spotify, cosa_sta_suonando
 from memoria_vettoriale import salva_ricordo, estrai_ricordi_pertinenti
-from tools_whatsapp import invia_messaggio_whatsapp
+from tools_whatsapp import prepara_messaggio_whatsapp, conferma_invio_whatsapp, annulla_messaggio_whatsapp
 from tools_files import crea_cartella, prepara_spostamento_file, conferma_spostamento_file, rinomina_elemento
 from tools_calendar import leggi_calendario, ottieni_eventi_precaricati, aggiungi_evento_calendario, elimina_evento_calendario
 from tools_routine import imposta_sveglia, ottieni_sveglie_attive
@@ -205,8 +206,12 @@ NON USARE EMOJI O CARATTERI SPECIALI nelle risposte.
         tutti_i_tool.append(mostra_meteo)
 
     if any(k in testo_lower for k in ["whatsapp", "messaggio", "scrivi a", "manda a", "invia a",
-                                       "avvisa", "di' a", "contatta", "testo a"]):
-        tutti_i_tool.append(invia_messaggio_whatsapp)
+                                   "avvisa", "di' a", "contatta"]):
+        tutti_i_tool.extend([prepara_messaggio_whatsapp, conferma_invio_whatsapp, annulla_messaggio_whatsapp])
+
+    # Aggiunta trigger per conferme/annullamenti WhatsApp e File
+    if any(k in testo_lower for k in ["sì", "no", "conferma", "annulla", "ok", "procedi", "va bene"]):
+        tutti_i_tool.extend([conferma_invio_whatsapp, annulla_messaggio_whatsapp, conferma_spostamento_file])
 
     if any(k in testo_lower for k in ["calendario", "appuntamento", "evento", "impegno", "riunione",
                                        "incontro", "quando ho", "cosa ho", "agenda", "oggi ho",
@@ -220,6 +225,10 @@ NON USARE EMOJI O CARATTERI SPECIALI nelle risposte.
     if any(k in testo_lower for k in ["luce", "led", "accendi", "spegni", "illumina", "lampada",
                                        "scrivania", "luci", "luminosità", "stato luce"]):
         tutti_i_tool.extend([controlla_led, ottieni_stato_led])
+
+    if any(k in testo_lower for k in ["spotify", "musica", "canzone", "playlist", "suona",
+                                   "metti", "pausa", "volume", "skip", "avanti", "cosa sta"]):
+        tutti_i_tool.extend([riproduci_canzone, riproduci_playlist, controlla_spotify, cosa_sta_suonando])
 
     if any(k in testo_lower for k in ["sito", "apri", "vai su", "naviga", "browser", "pagina",
                                        "youtube", "google", "netflix", "amazon", "instagram", "web"]):
@@ -340,11 +349,31 @@ NON USARE EMOJI O CARATTERI SPECIALI nelle risposte.
         app.after(0, aggiungi_messaggio_ui, "Errore", f"Errore: {str(e)}", "red")
 
 
+CONFERMA_WHATSAPP = {"sì", "si", "invialo", "manda", "confermo", "ok", "vai", "yes"}
+ANNULLA_WHATSAPP  = {"no", "annulla", "cancella", "stop", "modificalo", "cambia"}
+
 def invia_click(event=None):
     testo = entry_testo.get()
     if not testo.strip():
         return
     entry_testo.delete(0, 'end')
+
+    testo_lower = testo.strip().lower()
+
+    from tools_whatsapp import _messaggio_in_attesa, conferma_invio_whatsapp, annulla_messaggio_whatsapp
+
+    if _messaggio_in_attesa["contatto"] is not None:
+        if testo_lower in CONFERMA_WHATSAPP:
+            aggiungi_messaggio_ui("👤 Tu", testo, colore="white")
+            risultato = conferma_invio_whatsapp.invoke({})
+            aggiungi_messaggio_ui("🤖 IDIS", risultato, colore="lightblue")
+            return
+        elif testo_lower in ANNULLA_WHATSAPP:
+            aggiungi_messaggio_ui("👤 Tu", testo, colore="white")
+            risultato = annulla_messaggio_whatsapp.invoke({})
+            aggiungi_messaggio_ui("🤖 IDIS", risultato, colore="lightblue")
+            return
+
     aggiungi_messaggio_ui("👤 Tu", testo, colore="white")
     threading.Thread(target=elabora_risposta, args=(testo,), daemon=True).start()
 
