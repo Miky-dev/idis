@@ -323,17 +323,36 @@ CALENDARIO: {eventi_precaricati[:500]}""" # tronca per evitare prompt troppo lun
                 # ✅ invoke() — Ollama pensa internamente e restituisce solo il risultato
                 messaggio_corrente = llm_attivo.invoke(messaggi_lc)
             else:
-                # ✅ stream() — mostra il testo mentre viene generato
+                #TEST con timer
                 for chunk in llm_attivo.stream(messaggi_lc):
+                    if _chunk_n == 0:
+                        print(f"[TIMER] primo chunk: {_time.perf_counter()-_t_stream:.3f}s")
+                    if _chunk_n < 5:
+                        print(f"[DEBUG] chunk {_chunk_n}: {repr(chunk.content)}")  # ← aggiungi questa riga
+                    _chunk_n += 1
                     if messaggio_corrente is None:
                         messaggio_corrente = chunk
-                        set_stato("speaking") # Appena arriva il primo chunk
                     else:
                         messaggio_corrente += chunk
                     if chunk.content:
                         aggiorna(chunk.content)
 
-            risposta = messaggio_corrente
+            print(f"[TIMER] stream completo: {_time.perf_counter()-_t_stream:.3f}s — {_chunk_n} chunks")
+            
+            """
+                # ✅ stream() — mostra il testo mentre viene generato
+                for chunk in llm_attivo.stream(messaggi_lc):
+                    if messaggio_corrente is None:
+                        messaggio_corrente = chunk
+                    else:
+                        messaggio_corrente += chunk
+                    if chunk.content:
+                        aggiorna(chunk.content)
+
+            risposta = messaggio_corrente"""
+
+
+            
 
             if hasattr(risposta, 'tool_calls') and len(risposta.tool_calls) > 0:
                 messaggi_lc.append(risposta)

@@ -36,7 +36,6 @@ class IDISApi:
     def __init__(self):
         self._window = None          # Impostato dopo la creazione della finestra
         self._stato_sfera = "sleep"  # sleep | idle | thinking | speaking
-        self._typing_timer = None
 
     def set_window(self, window):
         self._window = window
@@ -53,7 +52,6 @@ class IDISApi:
         risultato_wa = gestisci_conferma_whatsapp(testo)
         if risultato_wa is not None:
             self._js("aggiungiMessaggio", "🤖 IDIS", risultato_wa)
-            self._set_stato_sfera("sleep")
             return
 
         # Callbacks UI → chiamano JS
@@ -69,22 +67,6 @@ class IDISApi:
             args=(testo, callbacks),
             daemon=True
         ).start()
-
-    def notifica_scrittura(self) -> None:
-        """Chiamato da JS mentre l'utente digita."""
-        if self._stato_sfera == "sleep":
-            self._set_stato_sfera("idle")
-            
-        # Gestione timer per tornare a sleep dopo 5 secondi di inattività
-        if self._typing_timer:
-            self._typing_timer.cancel()
-            
-        def _scaduto():
-            if self._stato_sfera == "idle":
-                self._set_stato_sfera("sleep")
-        
-        self._typing_timer = threading.Timer(5.0, _scaduto)
-        self._typing_timer.start()
 
     # ── Dati dashboard (chiamati da JS all'avvio o su refresh) ─
 
@@ -235,7 +217,7 @@ def avvia_ui():
         time.sleep(0.5)  # Piccolo delay per sicurezza DOM
         dati = api.get_dati_dashboard()
         api._js("inizializzaDashboard", dati)
-        api._set_stato_sfera("sleep")
+        api._set_stato_sfera("idle")
         # Avvia monitoraggio sistema e meteo
         threading.Thread(target=api._monitor_sistema, daemon=True).start()
         threading.Thread(target=api._monitor_meteo, daemon=True).start()

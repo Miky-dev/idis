@@ -1319,7 +1319,6 @@
         </div>
         <div class="chat-inp-row">
             <input class="chat-inp" id="chatInp" placeholder="Scrivi a IDIS..."
-                oninput="if(window.pywebview) window.pywebview.api.notifica_scrittura()"
                 onkeydown="if(event.key==='Enter')inviaMsg()">
             <button class="chat-send" onclick="inviaMsg()">➤</button>
         </div>
@@ -1440,12 +1439,27 @@
         }
         draw();
 
+        // Demo auto disabilitata — lo stato viene controllato da Python via PyWebView
+        // In modalità standalone (senza Python) cicla per mostrare gli stati
+        if (typeof window.pywebview === 'undefined') {
+            let di = 0;
+            setInterval(() => { const ss = ['sleep', 'idle', 'thinking', 'speaking']; di = (di + 1) % 4; setState(ss[di]); }, 4000);
+        }
+
         // CHAT
         function apriChat() { document.getElementById('chatPanel').classList.add('open'); document.getElementById('overlay').classList.add('show'); setTimeout(() => document.getElementById('chatInp').focus(), 420); }
         function chiudiChat() { document.getElementById('chatPanel').classList.remove('open'); document.getElementById('overlay').classList.remove('show'); }
+        function inviaMsg() {
+            const inp = document.getElementById('chatInp'), txt = inp.value.trim(); if (!txt) return; inp.value = '';
+            const msgs = document.getElementById('chatMsgs');
+            const mu = document.createElement('div'); mu.className = 'msg msg-u'; mu.textContent = txt; msgs.appendChild(mu); msgs.scrollTop = msgs.scrollHeight;
+            setState('thinking');
+            setTimeout(() => { const mi = document.createElement('div'); mi.className = 'msg msg-i'; mi.textContent = 'Elaborazione...'; msgs.appendChild(mi); msgs.scrollTop = msgs.scrollHeight; setState('speaking'); setTimeout(() => setState('idle'), 3000); }, 1400);
+        }
         function chip(t) { apriChat(); setTimeout(() => { document.getElementById('chatInp').value = t; }, 450); }
 
         // CPU sim
+        setInterval(() => { const v = 18 + Math.random() * 38; document.getElementById('cpuv').textContent = Math.round(v) + '%'; document.getElementById('cpub').style.width = v + '%'; }, 3000);
 
         // ══════════════════════════════════════════════════════════════
         // BRIDGE PYTHON ↔ JS  (chiamate da ui_webview.py)
