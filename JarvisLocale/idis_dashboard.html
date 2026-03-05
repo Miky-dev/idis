@@ -1,0 +1,1592 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IDIS — Dashboard</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600&family=JetBrains+Mono:wght@300;400;500&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg: #060a0e;
+            --surface: rgba(255, 255, 255, 0.035);
+            --border: rgba(255, 255, 255, 0.07);
+            --border-hi: rgba(62, 207, 255, 0.22);
+            --accent: #3ecfff;
+            --accent2: #7b61ff;
+            --accent3: #00ffa3;
+            --warm: #ffb347;
+            --danger: #ff4f6a;
+            --text: #e8f4ff;
+            --text-dim: rgba(232, 244, 255, 0.42);
+            --text-faint: rgba(232, 244, 255, 0.18);
+            --glow: rgba(62, 207, 255, 0.18);
+            --r: 14px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
+            font-weight: 300;
+            height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+            background: radial-gradient(ellipse 55% 45% at 15% 25%, rgba(62, 207, 255, .055) 0%, transparent 70%),
+                radial-gradient(ellipse 40% 55% at 85% 75%, rgba(123, 97, 255, .065) 0%, transparent 70%),
+                radial-gradient(ellipse 50% 40% at 50% 50%, rgba(62, 207, 255, .03) 0%, transparent 60%);
+        }
+
+        body::after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+            background-image: linear-gradient(rgba(62, 207, 255, .022) 1px, transparent 1px), linear-gradient(90deg, rgba(62, 207, 255, .022) 1px, transparent 1px);
+            background-size: 64px 64px;
+        }
+
+        .shell {
+            position: relative;
+            z-index: 1;
+            display: grid;
+            grid-template-columns: 290px 1fr 290px;
+            grid-template-rows: 52px 1fr 1fr 44px;
+            gap: 10px;
+            padding: 12px;
+            height: 100vh;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--r);
+            padding: 16px;
+            position: relative;
+            overflow: hidden;
+            backdrop-filter: blur(24px);
+            transition: border-color .3s, box-shadow .3s;
+            animation: fadeUp .5s ease both;
+        }
+
+        .card:hover {
+            border-color: var(--border-hi);
+            box-shadow: 0 0 28px var(--glow);
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(255, 255, 255, .025) 0%, transparent 55%);
+            pointer-events: none;
+        }
+
+        .card-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9px;
+            font-weight: 500;
+            letter-spacing: .2em;
+            text-transform: uppercase;
+            color: var(--text-faint);
+            margin-bottom: 10px;
+        }
+
+        .card .c {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            opacity: .35;
+        }
+
+        .card .c.tl {
+            top: 7px;
+            left: 7px;
+            border-top: 1px solid var(--accent);
+            border-left: 1px solid var(--accent);
+        }
+
+        .card .c.br {
+            bottom: 7px;
+            right: 7px;
+            border-bottom: 1px solid var(--accent);
+            border-right: 1px solid var(--accent);
+        }
+
+        @keyframes fadeUp {
+            from {
+                opacity: 0;
+                transform: translateY(8px)
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0)
+            }
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1
+            }
+
+            50% {
+                opacity: .25
+            }
+        }
+
+        /* HEADER */
+        .header {
+            grid-column: 1/-1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 18px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--r);
+            backdrop-filter: blur(24px);
+        }
+
+        .logo {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 17px;
+            font-weight: 700;
+            letter-spacing: .35em;
+            color: var(--accent);
+            text-shadow: 0 0 18px rgba(62, 207, 255, .5);
+        }
+
+        .logo-dot {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--accent3);
+            margin-left: 6px;
+            vertical-align: middle;
+            animation: pulse 1.8s ease-in-out infinite;
+        }
+
+        #clock {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 28px;
+            font-weight: 200;
+            letter-spacing: .04em;
+            text-align: center;
+        }
+
+        #date-lbl {
+            font-size: 10px;
+            color: var(--text-dim);
+            letter-spacing: .15em;
+            text-transform: uppercase;
+            margin-top: 1px;
+            text-align: center;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9px;
+            color: var(--accent3);
+            letter-spacing: .1em;
+        }
+
+        .status-dot {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--accent3);
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        .header-right {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .btn-chat {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 14px;
+            background: rgba(62, 207, 255, .08);
+            border: 1px solid rgba(62, 207, 255, .25);
+            border-radius: 8px;
+            color: var(--accent);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            letter-spacing: .05em;
+            cursor: pointer;
+            transition: all .2s;
+        }
+
+        .btn-chat:hover {
+            background: rgba(62, 207, 255, .16);
+            box-shadow: 0 0 16px rgba(62, 207, 255, .2);
+        }
+
+        .btn-mic {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: rgba(62, 207, 255, .07);
+            border: 1px solid rgba(62, 207, 255, .18);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 15px;
+            transition: all .2s;
+        }
+
+        .btn-mic:hover {
+            background: rgba(62, 207, 255, .16);
+            box-shadow: 0 0 16px rgba(62, 207, 255, .25);
+        }
+
+        /* COL SX */
+        .col-left {
+            grid-column: 1;
+            grid-row: 2/4;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .meteo-main {
+            display: flex;
+            align-items: flex-end;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .meteo-icon {
+            font-size: 36px;
+            line-height: 1;
+        }
+
+        .meteo-temp {
+            font-size: 46px;
+            font-weight: 200;
+            letter-spacing: -2px;
+            line-height: 1;
+        }
+
+        .meteo-temp sup {
+            font-size: 17px;
+            font-weight: 300;
+            vertical-align: super;
+        }
+
+        .meteo-desc {
+            font-size: 11px;
+            color: var(--text-dim);
+            margin-bottom: 3px;
+        }
+
+        .meteo-loc {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9px;
+            color: var(--accent);
+            letter-spacing: .1em;
+        }
+
+        .meteo-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 5px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border);
+        }
+
+        .m-item {
+            font-size: 10px;
+            color: var(--text-dim);
+        }
+
+        .m-item span {
+            display: block;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--text);
+            margin-top: 1px;
+        }
+
+        .evento {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 7px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .evento:last-child {
+            border-bottom: none;
+        }
+
+        .ev-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .ev-info {
+            flex: 1;
+        }
+
+        .ev-title {
+            font-size: 12px;
+            font-weight: 400;
+            margin-bottom: 1px;
+        }
+
+        .ev-time {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9px;
+            color: var(--text-dim);
+        }
+
+        .ev-badge {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 8px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+
+        /* CENTRO */
+        .col-center {
+            grid-column: 2;
+            grid-row: 2/4;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            position: relative;
+        }
+
+        .sphere-state {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            letter-spacing: .25em;
+            text-transform: uppercase;
+            color: var(--accent);
+            opacity: .75;
+            transition: color .5s;
+        }
+
+        .sphere-wrap {
+            position: relative;
+            width: 250px;
+            height: 250px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .orbit {
+            position: absolute;
+            border-radius: 50%;
+            border: 1px solid rgba(62, 207, 255, .1);
+            animation: orbitSpin linear infinite;
+            transition: opacity .8s;
+        }
+
+        .orbit-1 {
+            width: 220px;
+            height: 220px;
+            animation-duration: 12s;
+        }
+
+        .orbit-2 {
+            width: 190px;
+            height: 190px;
+            animation-duration: 8s;
+            animation-direction: reverse;
+            border-color: rgba(123, 97, 255, .12);
+        }
+
+        .orbit-3 {
+            width: 160px;
+            height: 160px;
+            animation-duration: 20s;
+            border-color: rgba(62, 207, 255, .07);
+        }
+
+        .orbit::before {
+            content: '';
+            position: absolute;
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--accent);
+            top: -2px;
+            left: 50%;
+            box-shadow: 0 0 8px var(--accent), 0 0 16px var(--accent);
+        }
+
+        .orbit-2::before {
+            background: var(--accent2);
+            box-shadow: 0 0 8px var(--accent2), 0 0 16px var(--accent2);
+        }
+
+        @keyframes orbitSpin {
+            from {
+                transform: rotate(0deg)
+            }
+
+            to {
+                transform: rotate(360deg)
+            }
+        }
+
+        #sphereCanvas {
+            border-radius: 50%;
+            position: relative;
+            z-index: 2;
+        }
+
+        .sphere-glow {
+            position: absolute;
+            width: 190px;
+            height: 190px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(62, 207, 255, .15) 0%, transparent 70%);
+            filter: blur(18px);
+            z-index: 1;
+            transition: background .8s;
+        }
+
+        .sphere-status-row {
+            display: flex;
+            gap: 12px;
+        }
+
+        .s-chip {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9px;
+            padding: 3px 10px;
+            border-radius: 20px;
+            letter-spacing: .08em;
+            cursor: pointer;
+            transition: all .2s;
+        }
+
+        .s-chip.active {
+            background: rgba(62, 207, 255, .12);
+            border: 1px solid rgba(62, 207, 255, .3);
+            color: var(--accent);
+        }
+
+        .s-chip.inactive {
+            background: rgba(255, 255, 255, .04);
+            border: 1px solid var(--border);
+            color: var(--text-faint);
+        }
+
+        .waveform {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            height: 26px;
+            opacity: 0;
+            transition: opacity .4s;
+        }
+
+        .waveform.active {
+            opacity: 1;
+        }
+
+        .wave-bar {
+            width: 3px;
+            border-radius: 2px;
+            background: var(--accent);
+            animation: wave 1s ease-in-out infinite;
+        }
+
+        @keyframes wave {
+
+            0%,
+            100% {
+                height: 3px;
+                opacity: .3
+            }
+
+            50% {
+                height: 20px;
+                opacity: 1
+            }
+        }
+
+        /* Spotify */
+        .sp-card {
+            width: 100%;
+        }
+
+        .sp-inner {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .sp-cover {
+            width: 40px;
+            height: 40px;
+            border-radius: 7px;
+            background: linear-gradient(135deg, #1db954, #0a4a1f);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            flex-shrink: 0;
+            box-shadow: 0 3px 12px rgba(29, 185, 84, .3);
+        }
+
+        .sp-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .sp-title {
+            font-size: 12px;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 2px;
+        }
+
+        .sp-artist {
+            font-size: 10px;
+            color: var(--text-dim);
+        }
+
+        .sp-progress {
+            height: 2px;
+            background: rgba(255, 255, 255, .1);
+            border-radius: 1px;
+            margin: 8px 0;
+        }
+
+        .sp-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #1db954, var(--accent3));
+            border-radius: 1px;
+            width: 35%;
+        }
+
+        .sp-controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+        }
+
+        .spb {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            font-size: 15px;
+            cursor: pointer;
+            transition: all .15s;
+            padding: 3px;
+        }
+
+        .spb:hover {
+            color: var(--text);
+            transform: scale(1.12);
+        }
+
+        .spb.main {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: var(--accent3);
+            color: #000;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 14px rgba(0, 255, 163, .3);
+        }
+
+        /* COL DX */
+        .col-right {
+            grid-column: 3;
+            grid-row: 2/4;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .sv-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .sv-item:last-child {
+            border-bottom: none;
+        }
+
+        .sv-time {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 19px;
+            font-weight: 200;
+            letter-spacing: -.5px;
+        }
+
+        .sv-lbl {
+            font-size: 10px;
+            color: var(--text-dim);
+            margin-top: 1px;
+        }
+
+        .toggle {
+            width: 34px;
+            height: 19px;
+            border-radius: 10px;
+            background: var(--accent);
+            position: relative;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: background .2s;
+            box-shadow: 0 0 10px rgba(62, 207, 255, .3);
+        }
+
+        .toggle::after {
+            content: '';
+            position: absolute;
+            width: 13px;
+            height: 13px;
+            border-radius: 50%;
+            background: #fff;
+            top: 3px;
+            right: 3px;
+            transition: all .2s;
+        }
+
+        .toggle.off {
+            background: rgba(255, 255, 255, .1);
+            box-shadow: none;
+        }
+
+        .toggle.off::after {
+            right: auto;
+            left: 3px;
+        }
+
+        .rm-item {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 7px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .rm-item:last-child {
+            border-bottom: none;
+        }
+
+        .rm-ico {
+            font-size: 15px;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, .04);
+            border-radius: 7px;
+            flex-shrink: 0;
+        }
+
+        .rm-text {
+            flex: 1;
+            font-size: 11px;
+            color: var(--text);
+        }
+
+        .rm-time {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 8px;
+            color: var(--text-faint);
+            letter-spacing: .04em;
+            margin-top: 1px;
+        }
+
+        .rm-check {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border: 1px solid var(--border-hi);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            color: transparent;
+            flex-shrink: 0;
+            transition: all .2s;
+        }
+
+        .rm-check:hover {
+            border-color: var(--accent3);
+            color: var(--accent3);
+        }
+
+        .rm-check.done {
+            background: var(--accent3);
+            border-color: var(--accent3);
+            color: #000;
+        }
+
+        .sys-row {
+            margin-bottom: 10px;
+        }
+
+        .sys-row:last-of-type {
+            margin-bottom: 0;
+        }
+
+        .sys-lbl {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+
+        .sys-name {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9px;
+            color: var(--text-dim);
+            letter-spacing: .1em;
+        }
+
+        .sys-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9px;
+            color: var(--text);
+        }
+
+        .sys-bar {
+            height: 3px;
+            background: rgba(255, 255, 255, .07);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .sys-fill {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 1s ease;
+        }
+
+        .hw-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .hw-row:last-child {
+            border-bottom: none;
+        }
+
+        .hw-name {
+            font-size: 11px;
+            color: var(--text-dim);
+            display: flex;
+            align-items: center;
+            gap: 7px;
+        }
+
+        .hw-badge {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9px;
+            padding: 2px 7px;
+            border-radius: 4px;
+            letter-spacing: .05em;
+        }
+
+        .on {
+            background: rgba(0, 255, 163, .1);
+            color: var(--accent3);
+            border: 1px solid rgba(0, 255, 163, .2);
+        }
+
+        .off-b {
+            background: rgba(255, 255, 255, .05);
+            color: var(--text-faint);
+            border: 1px solid var(--border);
+        }
+
+        /* FOOTER */
+        .footer {
+            grid-column: 1/-1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 18px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--r);
+            backdrop-filter: blur(24px);
+        }
+
+        .footer-l,
+        .footer-r {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 8px;
+            color: var(--text-faint);
+            letter-spacing: .15em;
+        }
+
+        .footer-c {
+            display: flex;
+            gap: 5px;
+        }
+
+        .chip {
+            padding: 3px 10px;
+            background: rgba(255, 255, 255, .04);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9px;
+            color: var(--text-dim);
+            cursor: pointer;
+            transition: all .2s;
+        }
+
+        .chip:hover {
+            background: rgba(62, 207, 255, .07);
+            border-color: rgba(62, 207, 255, .2);
+            color: var(--accent);
+        }
+
+        /* CHAT */
+        .overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, .45);
+            z-index: 99;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity .3s;
+            backdrop-filter: blur(3px);
+        }
+
+        .overlay.show {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .chat-panel {
+            position: fixed;
+            top: 0;
+            right: -450px;
+            width: 430px;
+            height: 100vh;
+            background: rgba(6, 10, 14, .97);
+            border-left: 1px solid var(--border-hi);
+            backdrop-filter: blur(40px);
+            z-index: 100;
+            transition: right .4s cubic-bezier(.4, 0, .2, 1);
+            display: flex;
+            flex-direction: column;
+            padding: 18px;
+            gap: 14px;
+            box-shadow: -16px 0 50px rgba(0, 0, 0, .5);
+        }
+
+        .chat-panel.open {
+            right: 0;
+        }
+
+        .chat-hdr {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .chat-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            letter-spacing: .2em;
+            color: var(--accent);
+        }
+
+        .chat-x {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        .chat-x:hover {
+            color: var(--text);
+        }
+
+        .chat-msgs {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding-right: 3px;
+        }
+
+        .chat-msgs::-webkit-scrollbar {
+            width: 2px;
+        }
+
+        .chat-msgs::-webkit-scrollbar-thumb {
+            background: var(--border-hi);
+            border-radius: 1px;
+        }
+
+        .msg {
+            max-width: 84%;
+            padding: 9px 13px;
+            border-radius: 11px;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .msg-u {
+            align-self: flex-end;
+            background: rgba(62, 207, 255, .1);
+            border: 1px solid rgba(62, 207, 255, .18);
+            color: var(--text);
+            border-bottom-right-radius: 3px;
+        }
+
+        .msg-i {
+            align-self: flex-start;
+            background: rgba(255, 255, 255, .05);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-bottom-left-radius: 3px;
+        }
+
+        .chat-inp-row {
+            display: flex;
+            gap: 7px;
+            align-items: center;
+        }
+
+        .chat-inp {
+            flex: 1;
+            background: rgba(255, 255, 255, .05);
+            border: 1px solid var(--border);
+            border-radius: 9px;
+            padding: 9px 13px;
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
+            font-size: 12px;
+            outline: none;
+            transition: border-color .2s;
+        }
+
+        .chat-inp:focus {
+            border-color: var(--border-hi);
+        }
+
+        .chat-inp::placeholder {
+            color: var(--text-faint);
+        }
+
+        .chat-send {
+            width: 36px;
+            height: 36px;
+            border-radius: 9px;
+            background: var(--accent);
+            border: none;
+            color: #000;
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: all .2s;
+        }
+
+        .chat-send:hover {
+            box-shadow: 0 0 18px rgba(62, 207, 255, .4);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="overlay" id="overlay" onclick="chiudiChat()"></div>
+
+    <div class="shell">
+
+        <header class="header">
+            <div style="display:flex;align-items:center;gap:14px">
+                <div class="logo">IDIS<span class="logo-dot"></span></div>
+                <div class="status-badge">
+                    <div class="status-dot"></div>ONLINE · v2.4
+                </div>
+            </div>
+            <div>
+                <div id="clock">--:--:--</div>
+                <div id="date-lbl">caricamento...</div>
+            </div>
+            <div class="header-right">
+                <div class="btn-mic">🎙</div>
+                <div class="btn-chat" onclick="apriChat()">◧ CHAT</div>
+            </div>
+        </header>
+
+        <!-- COL SX -->
+        <div class="col-left">
+            <div class="card" style="animation-delay:.05s">
+                <div class="c tl"></div>
+                <div class="c br"></div>
+                <div class="card-label">// meteo</div>
+                <div class="meteo-main">
+                    <div class="meteo-icon" id="meteoIcon">⛅</div>
+                    <div class="meteo-temp" id="meteoTemp">18<sup>°</sup></div>
+                </div>
+                <div class="meteo-desc" id="meteoDesc">Parzialmente nuvoloso</div>
+                <div class="meteo-loc">📍 VIGEVANO, IT</div>
+                <div class="meteo-grid">
+                    <div class="m-item">Umidità<span id="meteoHum">62%</span></div>
+                    <div class="m-item">Vento<span id="meteoWind">14 km/h</span></div>
+                    <div class="m-item">Percepito<span id="meteoFeels">16°</span></div>
+                    <div class="m-item">UV<span id="meteoUV">3 — basso</span></div>
+                </div>
+            </div>
+            <div class="card" style="flex:1;animation-delay:.10s">
+                <div class="c tl"></div>
+                <div class="c br"></div>
+                <div class="card-label">// prossimi eventi</div>
+                <div class="evento">
+                    <div class="ev-dot" style="background:#3ecfff"></div>
+                    <div class="ev-info">
+                        <div class="ev-title">Riunione team</div>
+                        <div class="ev-time">OGGI · 15:00–16:00</div>
+                    </div>
+                    <div class="ev-badge"
+                        style="background:rgba(62,207,255,.1);color:#3ecfff;border:1px solid rgba(62,207,255,.2)">2H
+                    </div>
+                </div>
+                <div class="evento">
+                    <div class="ev-dot" style="background:#7b61ff"></div>
+                    <div class="ev-info">
+                        <div class="ev-title">Dentista</div>
+                        <div class="ev-time">DOMANI · 10:30</div>
+                    </div>
+                    <div class="ev-badge"
+                        style="background:rgba(123,97,255,.1);color:#7b61ff;border:1px solid rgba(123,97,255,.2)">DOM
+                    </div>
+                </div>
+                <div class="evento">
+                    <div class="ev-dot" style="background:#ffb347"></div>
+                    <div class="ev-info">
+                        <div class="ev-title">Palestra</div>
+                        <div class="ev-time">GIO · 18:00–19:30</div>
+                    </div>
+                    <div class="ev-badge"
+                        style="background:rgba(255,179,71,.1);color:#ffb347;border:1px solid rgba(255,179,71,.2)">GIO
+                    </div>
+                </div>
+                <div class="evento">
+                    <div class="ev-dot" style="background:#00ffa3"></div>
+                    <div class="ev-info">
+                        <div class="ev-title">Call con Marco</div>
+                        <div class="ev-time">VEN · 11:00–11:30</div>
+                    </div>
+                    <div class="ev-badge"
+                        style="background:rgba(0,255,163,.1);color:#00ffa3;border:1px solid rgba(0,255,163,.2)">VEN
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CENTRO SFERA -->
+        <div class="col-center">
+            <div class="sphere-state" id="sphereState">// IN ASCOLTO</div>
+            <div class="sphere-wrap">
+                <div class="sphere-glow" id="sphereGlow"></div>
+                <div class="orbit orbit-1"></div>
+                <div class="orbit orbit-2"></div>
+                <div class="orbit orbit-3"></div>
+                <canvas id="sphereCanvas" width="155" height="155"></canvas>
+            </div>
+            <div class="waveform" id="waveform">
+                <div class="wave-bar" style="animation-delay:.00s"></div>
+                <div class="wave-bar" style="animation-delay:.08s"></div>
+                <div class="wave-bar" style="animation-delay:.16s"></div>
+                <div class="wave-bar" style="animation-delay:.24s"></div>
+                <div class="wave-bar" style="animation-delay:.32s"></div>
+                <div class="wave-bar" style="animation-delay:.40s"></div>
+                <div class="wave-bar" style="animation-delay:.48s"></div>
+                <div class="wave-bar" style="animation-delay:.56s"></div>
+                <div class="wave-bar" style="animation-delay:.64s"></div>
+                <div class="wave-bar" style="animation-delay:.72s"></div>
+                <div class="wave-bar" style="animation-delay:.80s"></div>
+                <div class="wave-bar" style="animation-delay:.88s"></div>
+            </div>
+            <div class="sphere-status-row">
+                <div class="s-chip inactive" onclick="setState('sleep')">RIPOSO</div>
+                <div class="s-chip active" onclick="setState('idle')">IDLE</div>
+                <div class="s-chip inactive" onclick="setState('thinking')">PENSA</div>
+                <div class="s-chip inactive" onclick="setState('speaking')">PARLA</div>
+            </div>
+            <div class="card sp-card" style="animation-delay:.3s">
+                <div class="card-label">// spotify</div>
+                <div class="sp-inner">
+                    <div class="sp-cover">🎵</div>
+                    <div class="sp-info">
+                        <div class="sp-title">Bohemian Rhapsody</div>
+                        <div class="sp-artist">Queen · A Night at the Opera</div>
+                    </div>
+                </div>
+                <div class="sp-progress">
+                    <div class="sp-fill"></div>
+                </div>
+                <div class="sp-controls">
+                    <button class="spb">⏮</button><button class="spb">🔀</button>
+                    <button class="spb main" onclick="this.textContent=this.textContent==='⏸'?'▶':'⏸'">⏸</button>
+                    <button class="spb">🔁</button><button class="spb">⏭</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- COL DX -->
+        <div class="col-right">
+            <div class="card" style="animation-delay:.15s">
+                <div class="c tl"></div>
+                <div class="c br"></div>
+                <div class="card-label">// sveglie</div>
+                <div class="sv-item">
+                    <div>
+                        <div class="sv-time">07:30</div>
+                        <div class="sv-lbl">Lun–Ven</div>
+                    </div>
+                    <div class="toggle" onclick="this.classList.toggle('off')"></div>
+                </div>
+                <div class="sv-item">
+                    <div>
+                        <div class="sv-time">09:00</div>
+                        <div class="sv-lbl">Weekend</div>
+                    </div>
+                    <div class="toggle" onclick="this.classList.toggle('off')"></div>
+                </div>
+                <div class="sv-item">
+                    <div>
+                        <div class="sv-time">14:50</div>
+                        <div class="sv-lbl">Riunione — oggi</div>
+                    </div>
+                    <div class="toggle off" onclick="this.classList.toggle('off')"></div>
+                </div>
+            </div>
+            <div class="card" style="flex:1;animation-delay:.20s">
+                <div class="c tl"></div>
+                <div class="c br"></div>
+                <div class="card-label">// routine</div>
+                <div class="rm-item">
+                    <div class="rm-ico">🦷</div>
+                    <div>
+                        <div class="rm-text">Lavare i denti</div>
+                        <div class="rm-time">DOPO OGNI PASTO</div>
+                    </div>
+                    <div class="rm-check" onclick="this.classList.toggle('done')">✓</div>
+                </div>
+                <div class="rm-item">
+                    <div class="rm-ico">🌙</div>
+                    <div>
+                        <div class="rm-text">Skin care serale</div>
+                        <div class="rm-time">OGNI SERA · 22:00</div>
+                    </div>
+                    <div class="rm-check" onclick="this.classList.toggle('done')">✓</div>
+                </div>
+                <div class="rm-item">
+                    <div class="rm-ico">💊</div>
+                    <div>
+                        <div class="rm-text">Integratori mattina</div>
+                        <div class="rm-time">OGNI MATTINA · 08:00</div>
+                    </div>
+                    <div class="rm-check done" onclick="this.classList.toggle('done')">✓</div>
+                </div>
+                <div class="rm-item">
+                    <div class="rm-ico">💧</div>
+                    <div>
+                        <div class="rm-text">Bevi 2L d'acqua</div>
+                        <div class="rm-time">DURANTE IL GIORNO</div>
+                    </div>
+                    <div class="rm-check" onclick="this.classList.toggle('done')">✓</div>
+                </div>
+            </div>
+            <div class="card" style="animation-delay:.25s">
+                <div class="c tl"></div>
+                <div class="c br"></div>
+                <div class="card-label">// sistema</div>
+                <div class="sys-row">
+                    <div class="sys-lbl"><span class="sys-name">CPU</span><span class="sys-val" id="cpuv">34%</span>
+                    </div>
+                    <div class="sys-bar">
+                        <div class="sys-fill" id="cpub"
+                            style="width:34%;background:linear-gradient(90deg,#3ecfff,#7b61ff)"></div>
+                    </div>
+                </div>
+                <div class="sys-row">
+                    <div class="sys-lbl"><span class="sys-name">RAM</span><span class="sys-val">11.2 / 32 GB</span>
+                    </div>
+                    <div class="sys-bar">
+                        <div class="sys-fill" style="width:35%;background:linear-gradient(90deg,#7b61ff,#3ecfff)"></div>
+                    </div>
+                </div>
+                <div class="sys-row">
+                    <div class="sys-lbl"><span class="sys-name">VRAM</span><span class="sys-val">5.8 / 8 GB</span></div>
+                    <div class="sys-bar">
+                        <div class="sys-fill" style="width:72%;background:linear-gradient(90deg,#ffb347,#ff4f6a)"></div>
+                    </div>
+                </div>
+                <div class="hw-row">
+                    <div class="hw-name">💡 LED</div>
+                    <div class="hw-badge on">ACCESO</div>
+                </div>
+                <div class="hw-row">
+                    <div class="hw-name">🔌 Arduino</div>
+                    <div class="hw-badge on">CONN.</div>
+                </div>
+                <div class="hw-row">
+                    <div class="hw-name">🤖 Qwen3 8B</div>
+                    <div class="hw-badge on">IN VRAM</div>
+                </div>
+            </div>
+        </div>
+
+        <footer class="footer">
+            <div class="footer-l">IDIS · LOCAL AI · QWEN3:8B · OLLAMA</div>
+            <div class="footer-c">
+                <div class="chip" onclick="chip('che ore sono?')">🕐 Ora</div>
+                <div class="chip" onclick="chip('meteo?')">🌤 Meteo</div>
+                <div class="chip" onclick="chip('metti musica')">🎵 Musica</div>
+                <div class="chip" onclick="chip('cosa ho oggi?')">📅 Oggi</div>
+                <div class="chip" onclick="chip('spegni la luce')">💡 Luce</div>
+            </div>
+            <div class="footer-r" id="lastUpd">AGG. --:--</div>
+        </footer>
+
+    </div>
+
+    <!-- CHAT PANEL -->
+    <div class="chat-panel" id="chatPanel">
+        <div class="chat-hdr">
+            <div class="chat-title">// TERMINALE CHAT</div>
+            <button class="chat-x" onclick="chiudiChat()">✕</button>
+        </div>
+        <div class="chat-msgs" id="chatMsgs">
+            <div class="msg msg-i">Sistemi online. Come posso aiutarti?</div>
+        </div>
+        <div class="chat-inp-row">
+            <input class="chat-inp" id="chatInp" placeholder="Scrivi a IDIS..."
+                oninput="if(window.pywebview) window.pywebview.api.notifica_scrittura()"
+                onkeydown="if(event.key==='Enter')inviaMsg()">
+            <button class="chat-send" onclick="inviaMsg()">➤</button>
+        </div>
+    </div>
+
+    <script>
+        // OROLOGIO
+        function tick() {
+            const n = new Date(), p = x => String(x).padStart(2, '0');
+            document.getElementById('clock').textContent = `${p(n.getHours())}:${p(n.getMinutes())}:${p(n.getSeconds())}`;
+            const gg = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'], mm = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+            document.getElementById('date-lbl').textContent = `${gg[n.getDay()]} ${n.getDate()} ${mm[n.getMonth()]} ${n.getFullYear()}`;
+            document.getElementById('lastUpd').textContent = `AGG. ${p(n.getHours())}:${p(n.getMinutes())}`;
+        }
+        setInterval(tick, 1000); tick();
+
+        // SFERA PLASMA
+        const canvas = document.getElementById('sphereCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width, H = canvas.height, CX = W / 2, CY = H / 2, BR = 64;
+        let T = 0, currentState = 'idle', lerpProgress = 1;
+
+        const STATES = {
+            sleep: { speed: .003, noiseAmp: 1.2, pulseAmp: .8, glowA: 'rgba(40,60,90,', glowB: 'rgba(30,45,70,', label: '// RIPOSO', oc: [40, 28, 55] },
+            idle: { speed: .010, noiseAmp: 5, pulseAmp: 2.5, glowA: 'rgba(62,207,255,', glowB: 'rgba(62,207,255,', label: '// IN ASCOLTO', oc: [12, 8, 20] },
+            thinking: { speed: .030, noiseAmp: 13, pulseAmp: 7, glowA: 'rgba(255,179,71,', glowB: 'rgba(255,140,0,', label: '// ELABORAZIONE', oc: [4, 2.5, 6] },
+            speaking: { speed: .044, noiseAmp: 9, pulseAmp: 11, glowA: 'rgba(0,255,163,', glowB: 'rgba(0,200,130,', label: '// IN RISPOSTA', oc: [6, 4, 10] }
+        };
+
+        let cur = Object.assign({}, STATES.idle), tgt = Object.assign({}, STATES.idle);
+
+        function noise(x, y) { return Math.abs(Math.sin(x * 127.1 + y * 311.7) * Math.cos(x * 92.3 - y * 158.7)) % 1; }
+        function snoise(x, y) {
+            const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+            const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+            return noise(ix, iy) + (noise(ix + 1, iy) - noise(ix, iy)) * ux + (noise(ix, iy + 1) - noise(ix, iy)) * uy + (noise(ix, iy) - noise(ix + 1, iy) - noise(ix, iy + 1) + noise(ix + 1, iy + 1)) * ux * uy;
+        }
+
+        function setState(s) {
+            if (s === currentState) return;
+            currentState = s; tgt = Object.assign({}, STATES[s]); lerpProgress = 0;
+            document.getElementById('sphereState').textContent = tgt.label;
+            document.getElementById('sphereState').style.color = s === 'sleep' ? 'rgba(80,110,150,0.7)' : s === 'idle' ? '#3ecfff' : s === 'thinking' ? '#ffb347' : '#00ffa3';
+            const gc = s === 'sleep' ? 'rgba(40,60,90,' : s === 'idle' ? 'rgba(62,207,255,' : s === 'thinking' ? 'rgba(255,179,71,' : 'rgba(0,255,163,';
+            document.getElementById('sphereGlow').style.background = `radial-gradient(circle,${gc}0.16) 0%,transparent 70%)`;
+            document.getElementById('waveform').classList.toggle('active', s === 'speaking');
+            document.querySelectorAll('.s-chip').forEach((el, i) => { const ss = ['sleep', 'idle', 'thinking', 'speaking']; el.className = 's-chip ' + (ss[i] === s ? 'active' : 'inactive'); });
+            tgt.oc.forEach((spd, i) => { const o = document.querySelectorAll('.orbit')[i]; o.style.animationDuration = spd + 's'; o.style.opacity = s === 'sleep' ? '0.08' : '1'; });
+        }
+
+        function lerp(a, b, t) { return a + (b - a) * t; }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            if (lerpProgress < 1) { lerpProgress = Math.min(1, lerpProgress + .025); const e = lerpProgress < .5 ? 2 * lerpProgress * lerpProgress : -1 + (4 - 2 * lerpProgress) * lerpProgress; cur.speed = lerp(cur.speed, tgt.speed, e); cur.noiseAmp = lerp(cur.noiseAmp, tgt.noiseAmp, e); cur.pulseAmp = lerp(cur.pulseAmp, tgt.pulseAmp, e); }
+            T += cur.speed;
+            const PTS = 128, pulse = Math.sin(T * 2.2) * cur.pulseAmp, st = STATES[currentState];
+
+            // Alone esterno
+            const extGlow = ctx.createRadialGradient(CX, CY, BR * .3, CX, CY, BR * 1.7);
+            extGlow.addColorStop(0, st.glowA + '0.10)'); extGlow.addColorStop(1, st.glowA + '0)');
+            ctx.beginPath(); ctx.arc(CX, CY, BR * 1.7, 0, Math.PI * 2); ctx.fillStyle = extGlow; ctx.fill();
+
+            // Strati sfera (4 strati, dal più esterno al nucleo)
+            for (let layer = 3; layer >= 0; layer--) {
+                const lR = BR - layer * 4, alpha = [.88, .65, .42, .20][layer];
+                ctx.beginPath();
+                for (let i = 0; i <= PTS; i++) {
+                    const a = (i / PTS) * Math.PI * 2, ns = .9 + layer * .25, nt = T * (1 + layer * .35);
+                    const n = snoise(Math.cos(a) * ns + nt, Math.sin(a) * ns + nt * .8);
+                    const r = lR + n * cur.noiseAmp + pulse * (1 - layer * .18);
+                    const x = CX + Math.cos(a) * r, y = CY + Math.sin(a) * r;
+                    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+                }
+                ctx.closePath();
+                const layerGrad = ctx.createRadialGradient(CX - lR * .28, CY - lR * .28, 0, CX, CY, lR + cur.noiseAmp + pulse);
+                layerGrad.addColorStop(0, st.glowA + alpha + ')');
+                layerGrad.addColorStop(.6, st.glowB + (alpha * .55) + ')');
+                layerGrad.addColorStop(1, 'rgba(0,0,0,0)');
+                ctx.fillStyle = layerGrad; ctx.fill();
+            }
+
+            // Contorno plasma energetico
+            ctx.beginPath();
+            for (let i = 0; i <= PTS; i++) {
+                const a = (i / PTS) * Math.PI * 2;
+                const n = snoise(Math.cos(a) * 1.3 + T * 1.2, Math.sin(a) * 1.3 + T * .9);
+                const r = BR + n * (cur.noiseAmp * .55) + pulse;
+                const x = CX + Math.cos(a) * r, y = CY + Math.sin(a) * r;
+                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.strokeStyle = st.glowA + '0.75)'; ctx.lineWidth = 1.5;
+            ctx.shadowColor = st.glowA + '1)'; ctx.shadowBlur = 14; ctx.stroke(); ctx.shadowBlur = 0;
+
+            // Highlight speculare
+            ctx.beginPath();
+            ctx.ellipse(CX - BR * .27, CY - BR * .27, BR * .2, BR * .12, -Math.PI / 4, 0, Math.PI * 2);
+            const hl = ctx.createRadialGradient(CX - BR * .27, CY - BR * .27, 0, CX - BR * .27, CY - BR * .27, BR * .2);
+            hl.addColorStop(0, 'rgba(255,255,255,.52)'); hl.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = hl; ctx.fill();
+
+            // Particelle interne (solo in thinking/speaking)
+            if (currentState !== 'idle' && currentState !== 'sleep') {
+                const pCount = currentState === 'thinking' ? 8 : 5;
+                for (let p = 0; p < pCount; p++) {
+                    const pAngle = T * (.8 + p * .3) + p * 2.1, pr = BR * (.25 + snoise(p + T * .4, p * 1.7) * .45);
+                    const px = CX + Math.cos(pAngle) * pr, py = CY + Math.sin(pAngle) * pr;
+                    const pSize = 1.5 + snoise(p, T) * 2;
+                    ctx.beginPath(); ctx.arc(px, py, pSize, 0, Math.PI * 2);
+                    ctx.fillStyle = st.glowA + '0.8)';
+                    ctx.shadowColor = st.glowA + '1)'; ctx.shadowBlur = 6;
+                    ctx.fill(); ctx.shadowBlur = 0;
+                }
+            }
+
+            requestAnimationFrame(draw);
+        }
+        draw();
+
+        // CHAT
+        function apriChat() { document.getElementById('chatPanel').classList.add('open'); document.getElementById('overlay').classList.add('show'); setTimeout(() => document.getElementById('chatInp').focus(), 420); }
+        function chiudiChat() { document.getElementById('chatPanel').classList.remove('open'); document.getElementById('overlay').classList.remove('show'); }
+        function chip(t) { apriChat(); setTimeout(() => { document.getElementById('chatInp').value = t; }, 450); }
+
+        // CPU sim
+
+        // ══════════════════════════════════════════════════════════════
+        // BRIDGE PYTHON ↔ JS  (chiamate da ui_webview.py)
+        // ══════════════════════════════════════════════════════════════
+
+        function aggiungiMessaggio(mittente, testo) {
+            const msgs = document.getElementById('chatMsgs');
+            const div = document.createElement('div');
+            div.className = mittente.includes('IDIS') ? 'msg msg-i' : 'msg msg-u';
+            div.textContent = testo;
+            div.id = 'msg-' + Date.now();
+            msgs.appendChild(div);
+            msgs.scrollTop = msgs.scrollHeight;
+            window._ultimoMsgId = div.id;
+        }
+
+        function aggiornaUltimoMessaggio(testo) {
+            if (!window._ultimoMsgId) { aggiungiMessaggio('🤖 IDIS', testo); return; }
+            const el = document.getElementById(window._ultimoMsgId);
+            if (el) el.textContent += testo;
+            const msgs = document.getElementById('chatMsgs');
+            msgs.scrollTop = msgs.scrollHeight;
+        }
+
+        function resetLabel() {
+            window._ultimoMsgId = null;
+        }
+
+        function setStatoSfera(stato) {
+            setState(stato);
+        }
+
+        function inizializzaDashboard(dati) {
+            // Aggiorna posizione meteo
+            if (dati.posizione && dati.posizione !== 'Sconosciuta') {
+                document.querySelectorAll('.meteo-loc').forEach(el => {
+                    el.textContent = '📍 ' + dati.posizione.toUpperCase();
+                });
+            }
+
+            // Aggiorna stato LED
+            if (dati.stato_led) {
+                const badges = document.querySelectorAll('.hw-badge');
+                badges.forEach(b => {
+                    if (b.parentElement && b.parentElement.textContent.includes('LED')) {
+                        b.textContent = dati.stato_led.toUpperCase();
+                        b.className = 'hw-badge ' + (dati.stato_led.toLowerCase().includes('acceso') ? 'on' : 'off-b');
+                    }
+                });
+            }
+
+            // Aggiorna calendario se ci sono eventi reali
+            if (dati.eventi_calendario && !dati.eventi_calendario.includes('Nessun')) {
+                aggiornaCalendario(dati.eventi_calendario);
+            }
+
+            // Aggiorna sveglie
+            if (dati.sveglie && Array.isArray(dati.sveglie) && dati.sveglie.length > 0) {
+                aggiornaSveglie(dati.sveglie);
+            }
+        }
+
+        function aggiornaCalendario(testoEventi) {
+            // Parsing testo formato: "- GG/MM/YYYY alle HH:MM: Titolo"
+            const container = document.querySelector('.col-left .card:last-child');
+            if (!container) return;
+            const righe = testoEventi.split('\n').filter(r => r.trim().startsWith('-'));
+            if (righe.length === 0) return;
+
+            // Rimuovi eventi placeholder
+            container.querySelectorAll('.evento').forEach(e => e.remove());
+
+            const colori = ['#3ecfff', '#7b61ff', '#ffb347', '#00ffa3', '#ff4f6a'];
+            righe.slice(0, 5).forEach((riga, i) => {
+                const testo = riga.replace(/^-\s*/, '');
+                const match = testo.match(/^(\d{2}\/\d{2}\/\d{4}) alle (\d{2}:\d{2}): (.+)$/);
+                const col = colori[i % colori.length];
+                const div = document.createElement('div');
+                div.className = 'evento';
+                if (match) {
+                    div.innerHTML = `<div class="ev-dot" style="background:${col}"></div>
+        <div class="ev-info"><div class="ev-title">${match[3]}</div><div class="ev-time">${match[1]} · ${match[2]}</div></div>
+        <div class="ev-badge" style="background:${col}22;color:${col};border:1px solid ${col}44">${match[2]}</div>`;
+                } else {
+                    div.innerHTML = `<div class="ev-dot" style="background:${col}"></div>
+        <div class="ev-info"><div class="ev-title">${testo}</div></div>`;
+                }
+                container.appendChild(div);
+            });
+        }
+
+        function aggiornaSveglie(sveglie) {
+            const container = document.querySelector('.col-right .card:first-child');
+            if (!container) return;
+            container.querySelectorAll('.sv-item').forEach(e => e.remove());
+            sveglie.slice(0, 4).forEach(sv => {
+                const div = document.createElement('div');
+                div.className = 'sv-item';
+                div.innerHTML = `<div><div class="sv-time">${sv.orario || '--:--'}</div><div class="sv-lbl">${sv.messaggio || ''}</div></div>
+      <div class="toggle ${sv.attiva ? '' : 'off'}" onclick="this.classList.toggle('off')"></div>`;
+                container.appendChild(div);
+            });
+        }
+
+        // Funzione invio messaggio che chiama Python
+        function inviaMsg() {
+            const inp = document.getElementById('chatInp'), txt = inp.value.trim(); if (!txt) return; inp.value = '';
+            aggiungiMessaggio('Tu', txt);
+            if (typeof window.pywebview !== 'undefined') {
+                window.pywebview.api.invia_messaggio(txt);
+            } else {
+                // Modalità standalone demo
+                setState('thinking');
+                setTimeout(() => { aggiungiMessaggio('🤖 IDIS', 'Elaborazione...'); setState('speaking'); setTimeout(() => setState('idle'), 3000); }, 1400);
+            }
+        }
+
+        function aggiornaStatsSistema(stats) {
+            if (stats.cpu_pct !== undefined) {
+                document.getElementById('cpuv').textContent = Math.round(stats.cpu_pct) + '%';
+                document.getElementById('cpub').style.width = stats.cpu_pct + '%';
+            }
+            if (stats.ram_pct !== undefined) {
+                const ramValEl = document.querySelectorAll('.sys-val')[1]; // Il secondo .sys-val è la RAM
+                if (ramValEl) ramValEl.textContent = stats.ram_txt;
+                const ramBarEl = document.querySelectorAll('.sys-fill')[1];
+                if (ramBarEl) ramBarEl.style.width = stats.ram_pct + '%';
+            }
+        }
+
+        function aggiornaMeteo(d) {
+            if (!d) return;
+            if (d.temp !== undefined) document.getElementById('meteoTemp').innerHTML = `${d.temp}<sup>°</sup>`;
+            if (d.desc) document.getElementById('meteoDesc').textContent = d.desc;
+            if (d.icon) document.getElementById('meteoIcon').textContent = d.icon;
+            if (d.hum) document.getElementById('meteoHum').textContent = d.hum;
+            if (d.wind) document.getElementById('meteoWind').textContent = d.wind;
+            if (d.feels) document.getElementById('meteoFeels').textContent = d.feels + '°';
+            if (d.uv) document.getElementById('meteoUV').textContent = d.uv;
+        }
+    </script>
+</body>
+
+</html>

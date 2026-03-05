@@ -1,1 +1,5 @@
-. Ora attuale: 15:06:15.\nPosizione: Milan, Italy\n\n=== STATO HARDWARE ===\n- Luce/LED scrivania: SPENTO\n\n=== DATI PERSONALI ===\n- app_messaggi: whatsapp\n- nome_utente: IDIS\n- altezza: 1.75 m\n- genere: maschio\n- data_nascita: 6 gennaio 2004\n- peso_utente: 63.50\n- citta_residenza: Vercelli\n- core_preferito: viola\n- macchina_preferita: Chevrolet Camaro\n- telefono_personale: 3311148970\n
+ "A String", # URL of the source pointing to a resource. The URL scheme must be HTTP or HTTPS.
+      },
+      "start": { # The (inclusive) start time of the event. For a recurring event, this is the start time of the first instance.
+        "date": "A String", # The date, in the format "yyyy-mm-dd", if this is an all-day event.
+        "dateTime": "A String", # The time, as a combined date-time va

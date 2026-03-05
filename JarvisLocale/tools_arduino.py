@@ -59,7 +59,10 @@ def controlla_led(stato: str) -> str:
         time.sleep(0.5)
 
         if arduino.in_waiting > 0:
-            arduino.readline().decode('utf-8').strip()
+            try:
+                arduino.readline().decode('utf-8').strip()
+            except Exception:
+                pass
 
         # Aggiorna lo stato globale
         stato_led_attuale = "ACCESO" if stato.upper() == "ON" else "SPENTO"

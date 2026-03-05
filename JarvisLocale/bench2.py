@@ -21,12 +21,7 @@ t0 = time.perf_counter()
 d = dateparser.parse('tra 5 minuti', languages=['it'], settings={'PREFER_DATES_FROM': 'future'})
 print(f'dateparser.parse: {time.perf_counter()-t0:.3f}s -> {d}')
 
-t0 = time.perf_counter()
-r = aggiungi_evento_calendario.invoke({
-    'sommario': 'Test dall\'IA',
-    'data_ora_inizio': '2026-12-31 alle 10:00',
-    'durata_minuti': 60
-})
+r = aggiungi_evento_calendario.invoke({'sommario':'test','data_ora_inizio':'31 dicembre 2026 alle 10:00'})
 print(f'aggiungi evento: {time.perf_counter()-t0:.3f}s -> {r}')
 
 t0 = time.perf_counter()

@@ -9,7 +9,7 @@ async def main():
     # Creiamo l'identità base
     agent = await client.agents.create(
         name="JARVIS",
-        description="Sei un assistente virtuale altamente efficiente, brillante e dal tono leggermente ironico, ispirato a J.A.R.V.I.S. Rispondi sempre in italiano."
+        description="Sei un assistente virtuale altamente efficiente, brillante e dal tono leggermente ironico, ispirato a J.A.R.V.I.S."
     )
     print(f"✅ Agente creato! IL TUO AGENT ID È: {agent.id}")
     print("-" * 40)

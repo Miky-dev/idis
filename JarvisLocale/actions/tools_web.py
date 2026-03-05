@@ -2,95 +2,73 @@ import webbrowser
 import pyautogui
 import time
 import os
+import threading
 from langchain_core.tools import tool
 from langchain_community.tools import DuckDuckGoSearchRun
 
-# Configura il percorso di Opera (tipicamente in AppData\Local\Programs\Opera\launcher.exe)
+# Registra Opera GX
 try:
     opera_path = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Programs', 'Opera GX', 'opera.exe')
     webbrowser.register('opera', None, webbrowser.BackgroundBrowser(opera_path))
 except Exception:
     pass
 
-# Inizializza lo strumento di base
 ricerca_ddg = DuckDuckGoSearchRun()
+
+def _get_browser():
+    try:
+        return webbrowser.get('opera')
+    except webbrowser.Error:
+        return webbrowser.get()
 
 @tool
 def apri_sito_web(nome_sito: str) -> str:
     """
-    Usa questo strumento SOLO quando l'utente ti chiede esplicitamente di aprire un sito web specifico (es. YouTube, Netflix, Amazon, Wikipedia, ecc.).
-    L'argomento 'nome_sito' deve essere il nome del sito senza spazi (es. 'youtube', 'netflix', 'google').
+    Apre un sito web nel browser. Usa quando l'utente chiede di aprire un sito specifico.
+    'nome_sito': nome del sito senza spazi (es. 'youtube', 'netflix', 'google').
     """
     nome_sito = nome_sito.lower().strip()
-    
-    # Costruiamo l'URL. Se l'utente non ha specificato l'estensione, proviamo con .com
-    if "." not in nome_sito:
-        url = f"https://www.{nome_sito}.com"
-    else:
-        url = f"https://{nome_sito}"
-        if not url.startswith("https://www."):
-            url = url.replace("https://", "https://www.")
-            
+    url = f"https://www.{nome_sito}.com" if "." not in nome_sito else f"https://www.{nome_sito}"
+
     try:
-        try:
-            browser = webbrowser.get('opera')
-        except webbrowser.Error:
-            browser = webbrowser.get() # Fallback al default se Opera non è registrato
-            
-        browser.open(url)
-        return f"Ho aperto {url} nel browser Opera."
+        # ✅ open() in thread separato — non blocca il tool in attesa del browser
+        threading.Thread(target=_get_browser().open, args=(url,), daemon=True).start()
+        return f"Apro {url}."
     except Exception as e:
-        return f"Errore durante l'apertura del sito: {str(e)}"
+        return f"Errore: {str(e)}"
 
 @tool
 def digita_nel_browser(ricerca: str) -> str:
     """
-    Usa questo strumento SOLO quando l'utente ti chiede esplicitamente di "scrivere", "cercare", o "digitare" qualcosa DIRETTAMENTE nella barra di ricerca del browser (es. 'cerca gatti divertenti sul browser').
-    L'argomento 'ricerca' è la frase esatta che devi digitare.
+    Digita e cerca qualcosa direttamente nella barra del browser.
+    'ricerca': frase esatta da cercare.
     """
     try:
-        try:
-            browser = webbrowser.get('opera')
-        except webbrowser.Error:
-            browser = webbrowser.get()
-            
-        # 1. Apre una nuova scheda vuota in Opera
-        browser.open_new_tab("about:blank")
-        time.sleep(2)  # Attende che il browser si carichi
-        
-        # 2. Seleziona la barra degli indirizzi/ricerca (scorciatoia universale)
+        threading.Thread(target=_get_browser().open_new_tab, args=("about:blank",), daemon=True).start()
+        time.sleep(1.2)  # ✅ ridotto da 2s a 1.2s
         pyautogui.hotkey('ctrl', 'l')
-        time.sleep(0.5)
-        
-        # 3. Digita il testo come farebbe un umano (con un piccolo intervallo tra le lettere per realismo)
-        pyautogui.write(ricerca, interval=0.05)
-        time.sleep(0.5)
-        
-        # 4. Preme Invio per avviare la ricerca
+        time.sleep(0.3)  # ✅ ridotto da 0.5s a 0.3s
+        pyautogui.write(ricerca, interval=0.03)  # ✅ interval ridotto
         pyautogui.press('enter')
-        
-        return f"Ho aperto Opera e cercato: '{ricerca}'."
+        return f"Cerco '{ricerca}' nel browser."
     except Exception as e:
-        return f"Errore durante l'automazione del browser: {str(e)}"
+        return f"Errore: {str(e)}"
 
 @tool
 def cerca_su_internet(query: str) -> str:
     """
-    Usa questo strumento SOLO per cercare su internet informazioni in tempo reale, notizie, eventi recenti o risposte a domande di cui non conosci la risposta (es. "chi ha vinto la partita", "notizie di oggi", o fatti post-2023).
-    NON USARE per il meteo (usa 'mostra_meteo').
-    L'argomento 'query' deve essere una stringa di ricerca.
+    Cerca informazioni su internet in tempo reale.
+    Usa per notizie, eventi recenti, fatti post-2023.
+    NON usare per il meteo (usa 'mostra_meteo').
     """
     try:
-        # Apri la pagina di ricerca nel browser per trasparenza
+        # ✅ Apre il browser in background senza aspettarlo
         from urllib.parse import quote_plus
-        url_ricerca = f"https://duckduckgo.com/?q={quote_plus(query)}"
-        try:
-            browser = webbrowser.get('opera')
-        except:
-            browser = webbrowser.get()
-        browser.open(url_ricerca)
+        url = f"https://duckduckgo.com/?q={quote_plus(query)}"
+        threading.Thread(target=_get_browser().open, args=(url,), daemon=True).start()
 
+        # La ricerca DDG è indipendente dal browser — non aspetta che si apra
         risultati = ricerca_ddg.run(query)
-        return f"Risultati dal web: {risultati}"
+        return f"Risultati: {risultati}"
     except Exception as e:
-        return f"Errore durante la ricerca web: {str(e)}"
+        return f"Errore ricerca: {str(e)}"

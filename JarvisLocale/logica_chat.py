@@ -1,0 +1,406 @@
+"""
+logica_chat.py — Logica LLM, tool routing e streaming per IDIS.
+Separata dalla UI per mantenere il codice modulare.
+"""
+
+import threading
+import datetime
+import time
+import locale
+import requests
+import os
+from dotenv import load_dotenv
+
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
+from langchain_ollama import ChatOllama
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+from actions.tools_os import apri_applicazione
+from actions.tools_web import cerca_su_internet, apri_sito_web, digita_nel_browser
+from actions.weather_report import mostra_meteo
+from actions.tools_spotify import riproduci_canzone, riproduci_playlist, controlla_spotify, cosa_sta_suonando
+from memoria_vettoriale import salva_ricordo, estrai_ricordi_pertinenti
+from tools_whatsapp import prepara_messaggio_whatsapp, conferma_invio_whatsapp, annulla_messaggio_whatsapp, _messaggio_in_attesa
+from tools_files import crea_cartella, prepara_spostamento_file, conferma_spostamento_file, rinomina_elemento
+from tools_calendar import leggi_calendario, ottieni_eventi_precaricati, aggiungi_evento_calendario, elimina_evento_calendario
+from tools_routine import imposta_sveglia, ottieni_sveglie_attive
+from tools_arduino import controlla_led, ottieni_stato_led, imposta_animazione_pensiero, get_stato_led
+from tools_memory import leggi_memoria, ricorda_informazione
+
+load_dotenv()
+
+try:
+    locale.setlocale(locale.LC_TIME, 'it_IT.UTF-8')
+except:
+    pass
+
+
+# ══════════════════════════════════════════════════════════════
+# CONFIGURAZIONE LLM
+# ══════════════════════════════════════════════════════════════
+
+llm_provider = os.getenv("LLM_PROVIDER", "ollama").lower()
+model_local = os.getenv("MODEL_LOCAL", "qwen3:8b")
+model_remote = os.getenv("MODEL_REMOTE", "gemini-2.0-flash-lite")
+
+if llm_provider == "ollama":
+    print(f"⚡ Avvio IDIS con modello LOCALE: {model_local}")
+    # ✅ [OPT] Usiamo un'unica istanza con parametri costanti per massimizzare il riutilizzo della cache di Ollama
+    # num_ctx=4096 aiuta a mantenere lo spazio in VRAM costante.
+    llm = ChatOllama(
+        model=model_local, 
+        temperature=0.1, 
+        extra_body={"options": {"thinking": False, "num_ctx": 4096}}
+    )
+else:
+    print(f"🚀 Avvio IDIS con modello REMOTO (Google): {model_remote}")
+    llm = ChatGoogleGenerativeAI(model=model_remote)
+
+# ✅ [OPT] llm_veloce ora punta alla stessa istanza per evitare switch di contesto Ollama inutili.
+llm_veloce = llm
+
+# Pre-bind dei tool di default
+TOOL_DEFAULT = [cerca_su_internet, ricorda_informazione]
+llm_default = llm.bind_tools(TOOL_DEFAULT)
+
+# ✅ Cache dei bind_tools — evita ricalcolo dello schema ad ogni messaggio
+_bind_cache = {}
+_bind_cache_default_key = frozenset(getattr(t, 'name', '') for t in TOOL_DEFAULT)
+_bind_cache[_bind_cache_default_key] = llm_default
+
+def pre_cache_bindings():
+    """Compila e pre-cacha FISICAMENTE i binding per le combinazioni di tool più comuni."""
+    print("⏳ Avvio pre-caching fisico dei tool binding (Ollama Warmup)...")
+    comuni = [
+        [mostra_meteo, cerca_su_internet, ricorda_informazione], 
+        [controlla_led, ottieni_stato_led, cerca_su_internet, ricorda_informazione], 
+        [riproduci_canzone, riproduci_playlist, controlla_spotify, cosa_sta_suonando, cerca_su_internet, ricorda_informazione], 
+        [leggi_calendario, aggiungi_evento_calendario, elimina_evento_calendario, cerca_su_internet, ricorda_informazione]
+    ]
+    for tools in comuni:
+        key = frozenset(getattr(t, 'name', '') for t in tools)
+        if key not in _bind_cache:
+            bound = llm.bind_tools(tools)
+            _bind_cache[key] = bound
+            # Invio una mini-richiesta asincrona/silenziosa per "scaldare" il KV cache di Ollama con questi tool
+            try:
+                if llm_provider == "ollama":
+                    def _warm(b=bound):
+                        try: b.invoke([HumanMessage(content="---")])
+                        except: pass
+                    threading.Thread(target=_warm, daemon=True).start()
+            except: pass
+    print("⚡ Tool binding inviati a Ollama per il warmup.")
+
+# Stato condiviso
+cronologia_chat = []
+eventi_precaricati = "Non sono ancora stati caricati gli eventi di oggi."
+posizione_cache = "Sconosciuta"
+
+CONFERMA_WHATSAPP = {"sì", "si", "invialo", "manda", "confermo", "ok", "vai", "yes"}
+ANNULLA_WHATSAPP  = {"no", "annulla", "cancella", "stop", "modificalo", "cambia"}
+
+
+# ══════════════════════════════════════════════════════════════
+# INIT BACKGROUND
+# ══════════════════════════════════════════════════════════════
+
+def _carica_posizione():
+    global posizione_cache
+    while True:
+        try:
+            risposta_ip = requests.get("http://ip-api.com/json/", timeout=3).json()
+            posizione_cache = f"{risposta_ip.get('city')}, {risposta_ip.get('country')}"
+            print(f"📍 Posizione aggiornata: {posizione_cache}")
+        except:
+            if posizione_cache == "Sconosciuta":
+                posizione_cache = "Sconosciuta (Offline)"
+        time.sleep(1800)  # Aggiorna ogni 30 minuti
+
+
+def _warmup_ollama():
+    try:
+        requests.post("http://localhost:11434/api/generate", json={
+            "model": model_local,
+            "prompt": "ciao",
+            "stream": False,
+            "options": {"num_predict": 1}
+        }, timeout=30)
+        print("🔥 Warmup completato — modello in VRAM")
+    except Exception as e:
+        print(f"⚠️ Warmup fallito: {e}")
+
+
+def carica_calendario_background():
+    global eventi_precaricati
+    try:
+        eventi_precaricati = ottieni_eventi_precaricati()
+    except Exception as e:
+        eventi_precaricati = f"Errore calendario: {str(e)}"
+
+
+def avvia_background():
+    """Avvia tutti i thread di background: posizione, warmup, calendario, pre-cache."""
+    threading.Thread(target=_carica_posizione, daemon=True).start()
+    threading.Thread(target=carica_calendario_background, daemon=True).start()
+    threading.Thread(target=pre_cache_bindings, daemon=True).start()
+    if llm_provider == "ollama":
+        threading.Thread(target=_warmup_ollama, daemon=True).start()
+
+
+# ══════════════════════════════════════════════════════════════
+# TOOL ROUTER
+# ══════════════════════════════════════════════════════════════
+
+def _seleziona_tool(testo_lower: str) -> list:
+    """Determina quali tool rendere disponibili in base al testo utente."""
+    tutti_i_tool = [cerca_su_internet, ricorda_informazione]
+
+    if any(k in testo_lower for k in ["meteo", "tempo", "piove", "pioggia", "sole", "temperatura",
+                                       "previsioni", "ombrello", "caldo", "freddo", "neve", "vento"]):
+        tutti_i_tool.append(mostra_meteo)
+
+    if any(k in testo_lower for k in ["whatsapp", "messaggio", "scrivi a", "manda a", "invia a",
+                                   "avvisa", "di' a", "contatta"]):
+        tutti_i_tool.extend([prepara_messaggio_whatsapp, conferma_invio_whatsapp, annulla_messaggio_whatsapp])
+
+    # Trigger per conferme/annullamenti WhatsApp e File
+    if any(k in testo_lower for k in ["sì", "no", "conferma", "annulla", "ok", "procedi", "va bene"]):
+        tutti_i_tool.extend([conferma_invio_whatsapp, annulla_messaggio_whatsapp, conferma_spostamento_file])
+
+    if any(k in testo_lower for k in ["calendario", "appuntamento", "evento", "impegno", "riunione",
+                                       "incontro", "quando ho", "cosa ho", "agenda", "oggi ho",
+                                       "domani ho", "aggiungi al", "elimina dal", "cancella evento"]):
+        tutti_i_tool.extend([leggi_calendario, aggiungi_evento_calendario, elimina_evento_calendario])
+
+    if any(k in testo_lower for k in ["sveglia", "timer", "promemoria", "ricordami", "avvisami",
+                                       "tra", "alle ", "minuti", "ore"]):
+        tutti_i_tool.append(imposta_sveglia)
+
+    if any(k in testo_lower for k in ["luce", "led", "accendi", "spegni", "illumina", "lampada",
+                                       "scrivania", "luci", "luminosità", "stato luce"]):
+        tutti_i_tool.extend([controlla_led, ottieni_stato_led])
+
+    if any(k in testo_lower for k in ["spotify", "musica", "canzone", "playlist", "suona",
+                                   "metti", "pausa", "volume", "skip", "avanti", "cosa sta"]):
+        tutti_i_tool.extend([riproduci_canzone, riproduci_playlist, controlla_spotify, cosa_sta_suonando])
+
+    if any(k in testo_lower for k in ["sito", "apri", "vai su", "naviga", "browser", "pagina",
+                                       "youtube", "google", "netflix", "amazon", "instagram", "web"]):
+        tutti_i_tool.append(apri_sito_web)
+
+    if any(k in testo_lower for k in ["app", "programma", "avvia", "lancia", "start", "spotify",
+                                       "discord", "notepad", "task manager", "armoury",
+                                       "calcolatrice", "blocco note", "esplora"]):
+        tutti_i_tool.append(apri_applicazione)
+
+    if any(k in testo_lower for k in ["cartella", "file", "sposta", "rinomina", "organizza",
+                                       "nuova cartella", "sposta i file"]):
+        tutti_i_tool.extend([crea_cartella, prepara_spostamento_file,
+                              conferma_spostamento_file, rinomina_elemento])
+
+    if any(k in testo_lower for k in ["word", "documento", "report", "relazione", "scrivi un file",
+                                       "crea un file", "salva in", "metti tutto in", "fai un report",
+                                       "crea un documento", "genera un file"]):
+        from tools_files import crea_file_word
+        tutti_i_tool.append(crea_file_word)
+
+    if any(k in testo_lower for k in ["digita", "cerca su", "scrivi nel browser",
+                                       "cerca in google", "cerca su youtube", "metti nella barra"]):
+        tutti_i_tool.append(digita_nel_browser)
+
+    # Rimuovi duplicati
+    visti = set()
+    unici = []
+    for t in tutti_i_tool:
+        nome = getattr(t, 'name', getattr(t, '__name__', str(t)))
+        if nome not in visti:
+            visti.add(nome)
+            unici.append(t)
+    return unici
+
+
+# ══════════════════════════════════════════════════════════════
+# ELABORAZIONE RISPOSTA (con callback UI)
+# ══════════════════════════════════════════════════════════════
+
+def elabora_risposta(testo_utente: str, ui_callbacks: dict):
+    """
+    Elabora il messaggio dell'utente: costruisce il prompt, chiama l'LLM con streaming,
+    gestisce i tool calls. Comunica con la UI tramite i callback.
+
+    ui_callbacks attesi:
+        - aggiungi_messaggio(mittente, testo, colore)
+        - aggiorna_testo(nuovo_testo)
+        - reset_label()
+        - set_stato(stato)   — "idle", "thinking", "speaking"
+    """
+    global cronologia_chat
+
+    aggiungi = ui_callbacks["aggiungi_messaggio"]
+    aggiorna = ui_callbacks["aggiorna_testo"]
+    reset_label = ui_callbacks["reset_label"]
+    set_stato = ui_callbacks["set_stato"]
+
+    if testo_utente.strip().lower() in ["/reset", "cancella chat", "dimentica tutto"]:
+        cronologia_chat = []
+        aggiungi("Sistema", "Cronologia azzerata.", "yellow")
+        return
+
+    set_stato("thinking")
+    imposta_animazione_pensiero(True)
+
+    SYSTEM_PROMPT_BASE = """Sei IDIS, un assistente IA avanzato.
+REGOLE CRITICHE ASSOLUTE:
+1. NON USARE EMOJI O CARATTERI SPECIALI.
+2. Usa i tool ogni volta che l'utente chiede un'azione concreta.
+3. Se decidi di usare un tool, NON RAGIONARE nel testo, emetti SOLO la chiamata al tool.
+4. METEO: usa 'mostra_meteo'. MEMORIA: usa 'ricorda_informazione'. Sii naturale e conciso."""
+
+    # ✅ [OPT] Contesto dinamico (ora, posizione, stato) messo in un messaggio a parte.
+    # Usiamo solo HH:MM per non invalidare la cache ogni secondo.
+    ora_minuto = datetime.datetime.now().strftime("%H:%M") 
+    data_odierna     = datetime.datetime.now().strftime("%d/%m/%Y")
+    giorno_settimana = datetime.datetime.now().strftime("%A")
+
+    # Memoria vettoriale
+    if len(testo_utente.split()) > 8:
+        ricordi_ripescati = estrai_ricordi_pertinenti(testo_utente, max_risultati=2)
+    else:
+        ricordi_ripescati = []
+    testo_ricordi = "\n".join([f"- {r}" for r in ricordi_ripescati]) if ricordi_ripescati else "Nessun ricordo pertinente."
+
+    stato_luce = get_stato_led()
+    memoria_strutturata = leggi_memoria()
+    testo_memoria_json = ", ".join([f"{k}: {v}" for k, v in memoria_strutturata.items()]) if memoria_strutturata else "Nessun dato personale."
+
+    testo_contesto = f"""Oggi: {giorno_settimana} {data_odierna}. Ora: {ora_minuto}. Posizione: {posizione_cache}
+STATO HW: LED {stato_luce}. MEM: {testo_memoria_json}.
+RICORDI: {testo_ricordi}
+CALENDARIO: {eventi_precaricati[:500]}""" # tronca per evitare prompt troppo lunghi
+
+    # Tool selection — prima dei messaggi per calcolare _usa_tool_specifici
+    testo_lower = testo_utente.lower()
+    tutti_i_tool = _seleziona_tool(testo_lower)
+
+    # ✅ /no_think solo per tool specifici, thinking attivo per risposte testuali
+    _usa_tool_specifici = len(tutti_i_tool) > 2
+    _prefix = "/no_think\n" if _usa_tool_specifici else ""
+    SYSTEM_PROMPT_STATICO = _prefix + SYSTEM_PROMPT_BASE
+
+    # Costruzione messaggi
+    messaggi_lc = [SystemMessage(content=SYSTEM_PROMPT_STATICO)]
+
+    for msg in cronologia_chat[-6:]:
+        messaggi_lc.append(msg)
+
+    messaggi_lc.append(SystemMessage(content=f"CONTESTO ATTUALE:\n{testo_contesto}"))
+
+    messaggio_utente_obj = HumanMessage(content=testo_utente)
+    messaggi_lc.append(messaggio_utente_obj)
+    cronologia_chat.append(messaggio_utente_obj)
+
+    # ✅ [OPT] bind_tools con cache. Se usiamo tool specifici, usiamo llm_veloce (no CoT lungo)
+    tool_key = frozenset(getattr(t, 'name', '') for t in tutti_i_tool)
+    if tool_key not in _bind_cache:
+        llm_da_usare = llm if tool_key == _bind_cache_default_key else llm_veloce
+        _bind_cache[tool_key] = llm_da_usare.bind_tools(tutti_i_tool)
+    
+    llm_attivo = _bind_cache[tool_key]
+
+    # ✅ Strategia ibrida:
+    # - Se ci sono tool specifici (>2) → invoke() diretto, evita di aspettare chunk vuoti del thinking
+    # - Se è risposta testuale pura → stream() per mostrare il testo token per token
+    try:
+        reset_label()
+        aggiungi("🤖 IDIS", "", "lightblue")
+        testo_finale = ""
+
+        for _ in range(3):
+            messaggio_corrente = None
+
+            if _usa_tool_specifici:
+                # ✅ invoke() — Ollama pensa internamente e restituisce solo il risultato
+                messaggio_corrente = llm_attivo.invoke(messaggi_lc)
+            else:
+                # ✅ stream() — mostra il testo mentre viene generato
+                for chunk in llm_attivo.stream(messaggi_lc):
+                    if messaggio_corrente is None:
+                        messaggio_corrente = chunk
+                        set_stato("speaking") # Appena arriva il primo chunk
+                    else:
+                        messaggio_corrente += chunk
+                    if chunk.content:
+                        aggiorna(chunk.content)
+
+            risposta = messaggio_corrente
+
+            if hasattr(risposta, 'tool_calls') and len(risposta.tool_calls) > 0:
+                messaggi_lc.append(risposta)
+
+                for tool_call in risposta.tool_calls:
+                    nome_tool = tool_call['name']
+                    args_tool = tool_call['args']
+                    tool_obj = next((t for t in tutti_i_tool if getattr(t, 'name', getattr(t, '__name__', str(t))) == nome_tool), None)
+
+                    if tool_obj:
+                        print(f"🛠️ Eseguo: {nome_tool} → {args_tool}")
+                        risultato = tool_obj.invoke(args_tool)
+                        aggiorna(str(risultato))
+
+                        messaggi_lc.append(ToolMessage(
+                            content=str(risultato),
+                            tool_call_id=tool_call['id']
+                        ))
+
+                        imposta_animazione_pensiero(False)
+                        set_stato("idle")
+                        cronologia_chat.append(AIMessage(content=str(risultato)))
+                        return
+                    else:
+                        print(f"⚠️ Tool '{nome_tool}' non trovato.")
+
+                reset_label()
+                aggiungi("🤖 IDIS", "", "lightblue")
+
+            else:
+                if isinstance(risposta.content, list):
+                    testo_finale = "".join([
+                        part['text'] if isinstance(part, dict) and 'text' in part else str(part)
+                        for part in risposta.content
+                    ])
+                else:
+                    testo_finale = risposta.content
+                break
+
+        if not testo_finale:
+            testo_finale = "Azione completata."
+            aggiorna(testo_finale)
+
+        imposta_animazione_pensiero(False)
+        set_stato("speaking")
+        cronologia_chat.append(AIMessage(content=testo_finale))
+
+        # Torna in modalità riposo dopo un breve delay
+        def _torna_a_dormire():
+            time.sleep(3)
+            set_stato("sleep")
+        threading.Thread(target=_torna_a_dormire, daemon=True).start()
+
+    except Exception as e:
+        imposta_animazione_pensiero(False)
+        set_stato("sleep")
+        aggiungi("Errore", f"Errore: {str(e)}", "red")
+
+
+def gestisci_conferma_whatsapp(testo: str) -> str | None:
+    """Se c'è un messaggio WhatsApp in attesa, gestisce conferma/annullamento.
+    Ritorna il risultato se gestito, None se non pertinente."""
+    testo_lower = testo.strip().lower()
+    if _messaggio_in_attesa["contatto"] is None:
+        return None
+    if testo_lower in CONFERMA_WHATSAPP:
+        return conferma_invio_whatsapp.invoke({})
+    elif testo_lower in ANNULLA_WHATSAPP:
+        return annulla_messaggio_whatsapp.invoke({})
+    return None
