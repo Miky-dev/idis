@@ -2,7 +2,7 @@ from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
 from tools_os import apri_applicazione
 from tools_web import cerca_su_internet
-from tools_arduino import imposta_animazione_pensiero
+from actions.tools_arduino import imposta_animazione_pensiero
 import datetime
 import time
 import locale

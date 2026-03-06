@@ -18,7 +18,7 @@ from logica_chat import (
     posizione_cache,
 )
 import psutil
-from tools_arduino import get_stato_led
+from actions.tools_arduino import get_stato_led
 from tools_memory import leggi_memoria
 from tools_routine import ottieni_sveglie_attive
 
