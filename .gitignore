@@ -7,3 +7,7 @@ token.json
 memoria_utente.json
 *.log
 .DS_Store
+
+# Modelli TTS Kokoro
+JarvisLocale/kokoro-v1.0.onnx
+JarvisLocale/voices*.bin

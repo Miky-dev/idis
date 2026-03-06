@@ -5,11 +5,17 @@ Non è un tool LangChain — viene gestito direttamente in logica_chat.py
 prima di passare all'LLM, aggiungendo l'immagine come contenuto del messaggio.
 """
 
-import cv2
 import base64
 import datetime
 import os
 import tempfile
+
+try:
+    import cv2
+    _CV2_DISPONIBILE = True
+except ImportError:
+    _CV2_DISPONIBILE = False
+    print("⚠️ cv2 (opencv-python) non trovato — funzione visione disabilitata.")
 
 
 def scatta_foto(indice_camera: int = 0) -> str | None:
@@ -17,6 +23,8 @@ def scatta_foto(indice_camera: int = 0) -> str | None:
     Apre la webcam, scatta un frame e lo salva come JPEG temporaneo.
     Ritorna il path del file, o None se fallisce.
     """
+    if not _CV2_DISPONIBILE:
+        return None
     cap = cv2.VideoCapture(indice_camera)
     if not cap.isOpened():
         # Prova indice 1 se 0 fallisce (es. webcam esterna)

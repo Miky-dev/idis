@@ -28,6 +28,7 @@ import supervisore_routine
 from tools_arduino import controlla_led, ottieni_stato_led, imposta_animazione_pensiero, get_stato_led
 from tools_memory import leggi_memoria, ricorda_informazione
 from actions.tools_vision import esegui_visione
+from actions import tools_tts
 
 load_dotenv()
 
@@ -72,29 +73,41 @@ _bind_cache = {}
 _bind_cache_default_key = frozenset(getattr(t, 'name', '') for t in TOOL_DEFAULT)
 _bind_cache[_bind_cache_default_key] = llm_default
 
+# ✅ [OPT] Prompt Statico per favorire il KV Caching di Ollama
+# Il grosso del prompt (regole e identità) deve rimanere INVARIATO tra le sessioni.
+SYSTEM_PROMPT_STATICO = """Sei IDIS, un assistente IA avanzato.
+REGOLE CRITICHE ASSOLUTE:
+1. NON USARE EMOJI O CARATTERI SPECIALI.
+2. Usa i tool ogni volta che l'utente chiede un'azione concreta.
+3. Se decidi di usare un tool, NON RAGIONARE nel testo, emetti SOLO la chiamata al tool.
+4. RICERCA ONLINE: genera risposte estremamente brevi, coese e sintetiche (massimo 1-2 frasi), poiché l'utente approfondirà autonomamente sui siti aperti.
+5. METEO: usa 'mostra_meteo'. MEMORIA: usa 'ricorda_informazione'. Sii naturale e conciso."""
+
 def pre_cache_bindings():
     """Compila e pre-cacha FISICAMENTE i binding per le combinazioni di tool più comuni."""
-    print("⏳ Avvio pre-caching fisico dei tool binding (Ollama Warmup)...")
+    if llm_provider != "ollama": return
+    
+    print("⏳ Avvio pre-caching sequenziale dei tool binding...")
     comuni = [
         [mostra_meteo, cerca_su_internet, ricorda_informazione], 
         [controlla_led, ottieni_stato_led, cerca_su_internet, ricorda_informazione], 
         [riproduci_canzone, riproduci_playlist, controlla_spotify, cosa_sta_suonando, cerca_su_internet, ricorda_informazione], 
         [leggi_calendario, aggiungi_evento_calendario, elimina_evento_calendario, cerca_su_internet, ricorda_informazione]
     ]
+    
+    # Eseguiamo il pre-cache uno alla volta per non saturare la GPU/CPU all'avvio
     for tools in comuni:
         key = frozenset(getattr(t, 'name', '') for t in tools)
         if key not in _bind_cache:
             bound = llm.bind_tools(tools)
             _bind_cache[key] = bound
-            # Invio una mini-richiesta asincrona/silenziosa per "scaldare" il KV cache di Ollama con questi tool
+            # "Scalda" la cache con un mini-messaggio che include il system prompt
             try:
-                if llm_provider == "ollama":
-                    def _warm(b=bound):
-                        try: b.invoke([HumanMessage(content="---")])
-                        except: pass
-                    threading.Thread(target=_warm, daemon=True).start()
+                bound.invoke([SystemMessage(content=SYSTEM_PROMPT_STATICO), HumanMessage(content="---")])
+                time.sleep(0.5) # Piccolo respiro tra un warmup e l'altro
             except: pass
-    print("⚡ Tool binding inviati a Ollama per il warmup.")
+            
+    print("⚡ Pre-caching dei tool completato.")
 
 # Stato condiviso
 cronologia_chat = []
@@ -121,14 +134,11 @@ def _carica_posizione():
 
 
 def _warmup_ollama():
+    """Carica il modello in VRAM con una richiesta chat minima ma reale."""
     try:
-        requests.post("http://localhost:11434/api/generate", json={
-            "model": model_local,
-            "prompt": "ciao",
-            "stream": False,
-            "options": {"num_predict": 1}
-        }, timeout=30)
-        print("🔥 Warmup completato — modello in VRAM")
+        # Usa l'istanza LangChain per essere coerente con il template di chat
+        llm.invoke([SystemMessage(content=SYSTEM_PROMPT_STATICO), HumanMessage(content="Warmup")])
+        print("🔥 Warmup completato — prompt prefix in VRAM")
     except Exception as e:
         print(f"⚠️ Warmup fallito: {e}")
 
@@ -142,20 +152,26 @@ def carica_calendario_background():
 
 
 def avvia_background():
-    """Avvia tutti i thread di background nell ordine corretto."""
-    if llm_provider == "ollama":
-        threading.Thread(target=_warmup_ollama, daemon=True).start()
-
-    def _avvia_resto():
-        time.sleep(3)
-        threading.Thread(target=_carica_posizione, daemon=True).start()
-        threading.Thread(target=carica_calendario_background, daemon=True).start()
-        threading.Thread(target=pre_cache_bindings, daemon=True).start()
-        # Avvia supervisore proattivo con riferimento all LLM (i callbacks UI arrivano al primo messaggio)
+    """Avvia tutti i thread di background nell'ordine corretto."""
+    def _avvia_sequenza():
+        # 1. Posizione (veloce, rete)
+        _carica_posizione()
+        
+        # 2. Calendario (rete)
+        carica_calendario_background()
+        
+        # 3. Warmup Ollama (pesante, GPU)
+        if llm_provider == "ollama":
+            _warmup_ollama()
+            # 4. Pre-caching tool (pesante, GPU)
+            pre_cache_bindings()
+            
+        # 5. Supervisore (leggero)
         supervisore_routine.inizializza({}, llm)
         supervisore_routine.avvia()
+        tools_tts.avvia_precaricamento()
 
-    threading.Thread(target=_avvia_resto, daemon=True).start()
+    threading.Thread(target=_avvia_sequenza, daemon=True).start()
 
 
 # ══════════════════════════════════════════════════════════════
@@ -252,6 +268,9 @@ def elabora_risposta(testo_utente: str, ui_callbacks: dict):
     """
     global cronologia_chat
 
+    # ✅ Interrompi subito la voce se IDIS stava parlando
+    tools_tts.ferma()
+
     global _ui_callbacks_globali
     aggiungi = ui_callbacks["aggiungi_messaggio"]
     aggiorna = ui_callbacks["aggiorna_testo"]
@@ -282,6 +301,7 @@ def elabora_risposta(testo_utente: str, ui_callbacks: dict):
         aggiorna(risposta_visione)
         imposta_animazione_pensiero(False)
         set_stato("speaking")
+        tools_tts.parla(risposta_visione)
         cronologia_chat.append(HumanMessage(content=testo_utente))
         cronologia_chat.append(AIMessage(content=risposta_visione))
         def _torna_idle_v():
@@ -292,15 +312,6 @@ def elabora_risposta(testo_utente: str, ui_callbacks: dict):
 
     set_stato("thinking")
     imposta_animazione_pensiero(True)
-
-    # ✅ [OPT] Prompt Statico per favorire il KV Caching di Ollama
-    # Il grosso del prompt (regole e identità) deve rimanere INVARIATO tra le sessioni.
-    SYSTEM_PROMPT_STATICO = """Sei IDIS, un assistente IA avanzato.
-REGOLE CRITICHE ASSOLUTE:
-1. NON USARE EMOJI O CARATTERI SPECIALI.
-2. Usa i tool ogni volta che l'utente chiede un'azione concreta.
-3. Se decidi di usare un tool, NON RAGIONARE nel testo, emetti SOLO la chiamata al tool.
-4. METEO: usa 'mostra_meteo'. MEMORIA: usa 'ricorda_informazione'. Sii naturale e conciso."""
 
     # ✅ [OPT] Contesto dinamico (ora, posizione, stato) messo in un messaggio a parte.
     # Usiamo solo HH:MM per non invalidare la cache ogni secondo.
@@ -363,6 +374,10 @@ CALENDARIO: {eventi_precaricati[:500]}""" # tronca per evitare prompt troppo lun
             #TEST con timer
             _t_stream = time.perf_counter()
             _chunk_n = 0
+
+            # Avvia subito la pipeline TTS streaming
+            tools_tts.avvia_sessione_streaming()
+
             for chunk in llm_attivo.stream(messaggi_lc):
                     if _chunk_n == 0:
                         print(f"[TIMER] primo chunk: {time.perf_counter()-_t_stream:.3f}s")
@@ -372,11 +387,12 @@ CALENDARIO: {eventi_precaricati[:500]}""" # tronca per evitare prompt troppo lun
 
                     if chunk.content:
                         if not _primo_testo_ricevuto:
-                            # Passa a speaking e ferma hardware solo al primo vero testo
                             set_stato("speaking")
                             imposta_animazione_pensiero(False)
                             _primo_testo_ricevuto = True
                         aggiorna(chunk.content)
+                        # ✅ Alimenta il TTS streaming frase per frase
+                        tools_tts.alimenta_chunk(chunk.content)
 
                     if messaggio_corrente is None:
                         messaggio_corrente = chunk
@@ -388,6 +404,8 @@ CALENDARIO: {eventi_precaricati[:500]}""" # tronca per evitare prompt troppo lun
             risposta = messaggio_corrente
 
             if hasattr(risposta, 'tool_calls') and len(risposta.tool_calls) > 0:
+                # Se c'è un tool call, ferma il TTS (non c'è testo da leggere)
+                tools_tts.ferma()
                 messaggi_lc.append(risposta)
 
                 for tool_call in risposta.tool_calls:
@@ -429,15 +447,15 @@ CALENDARIO: {eventi_precaricati[:500]}""" # tronca per evitare prompt troppo lun
             testo_finale = "Azione completata."
             aggiorna(testo_finale)
 
-        # Se non era passato a speaking (es: risposta istantanea), forza ora
         imposta_animazione_pensiero(False)
         cronologia_chat.append(AIMessage(content=testo_finale))
 
-        # Torna idle dopo un breve delay
-        def _torna_idle():
-            time.sleep(2)
+        # ✅ Chiude lo stream TTS: manda il residuo e aspetta fine riproduzione
+        # Il thread torna idle solo quando Kokoro finisce davvero di parlare
+        def _finalizza_e_idle():
+            tools_tts.chiudi_sessione_streaming()
             set_stato("idle")
-        threading.Thread(target=_torna_idle, daemon=True).start()
+        threading.Thread(target=_finalizza_e_idle, daemon=True).start()
 
     except Exception as e:
         imposta_animazione_pensiero(False)
