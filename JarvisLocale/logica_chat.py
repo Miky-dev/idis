@@ -23,9 +23,11 @@ from memoria_vettoriale import salva_ricordo, estrai_ricordi_pertinenti
 from tools_whatsapp import prepara_messaggio_whatsapp, conferma_invio_whatsapp, annulla_messaggio_whatsapp, _messaggio_in_attesa
 from tools_files import crea_cartella, prepara_spostamento_file, conferma_spostamento_file, rinomina_elemento
 from tools_calendar import leggi_calendario, ottieni_eventi_precaricati, aggiungi_evento_calendario, elimina_evento_calendario
-from tools_routine import imposta_sveglia, ottieni_sveglie_attive
+from tools_routine import imposta_sveglia, ottieni_sveglie_attive, leggi_routine, aggiungi_alla_routine, rimuovi_dalla_routine
+import supervisore_routine
 from tools_arduino import controlla_led, ottieni_stato_led, imposta_animazione_pensiero, get_stato_led
 from tools_memory import leggi_memoria, ricorda_informazione
+from actions.tools_vision import esegui_visione
 
 load_dotenv()
 
@@ -48,9 +50,11 @@ if llm_provider == "ollama":
     # ✅ [OPT] Usiamo un'unica istanza con parametri costanti per massimizzare il riutilizzo della cache di Ollama
     # num_ctx=4096 aiuta a mantenere lo spazio in VRAM costante.
     llm = ChatOllama(
-        model=model_local, 
-        temperature=0.1, 
-        extra_body={"options": {"thinking": False, "num_ctx": 4096}}
+        model=model_local,
+        temperature=0.1,
+        num_ctx=4096,
+        # Passa think=False nativamente — supportato da Ollama recente
+        extra_body={"think": False},
     )
 else:
     print(f"🚀 Avvio IDIS con modello REMOTO (Google): {model_remote}")
@@ -96,6 +100,7 @@ def pre_cache_bindings():
 cronologia_chat = []
 eventi_precaricati = "Non sono ancora stati caricati gli eventi di oggi."
 posizione_cache = "Sconosciuta"
+_ui_callbacks_globali = None  # impostato al primo elabora_risposta
 
 CONFERMA_WHATSAPP = {"sì", "si", "invialo", "manda", "confermo", "ok", "vai", "yes"}
 ANNULLA_WHATSAPP  = {"no", "annulla", "cancella", "stop", "modificalo", "cambia"}
@@ -107,15 +112,12 @@ ANNULLA_WHATSAPP  = {"no", "annulla", "cancella", "stop", "modificalo", "cambia"
 
 def _carica_posizione():
     global posizione_cache
-    while True:
-        try:
-            risposta_ip = requests.get("http://ip-api.com/json/", timeout=3).json()
-            posizione_cache = f"{risposta_ip.get('city')}, {risposta_ip.get('country')}"
-            print(f"📍 Posizione aggiornata: {posizione_cache}")
-        except:
-            if posizione_cache == "Sconosciuta":
-                posizione_cache = "Sconosciuta (Offline)"
-        time.sleep(1800)  # Aggiorna ogni 30 minuti
+    try:
+        risposta_ip = requests.get("http://ip-api.com/json/", timeout=3).json()
+        posizione_cache = f"{risposta_ip.get('city')}, {risposta_ip.get('country')}"
+        print(f"📍 Posizione rilevata: {posizione_cache}")
+    except:
+        posizione_cache = "Sconosciuta (Offline)"
 
 
 def _warmup_ollama():
@@ -140,12 +142,20 @@ def carica_calendario_background():
 
 
 def avvia_background():
-    """Avvia tutti i thread di background: posizione, warmup, calendario, pre-cache."""
-    threading.Thread(target=_carica_posizione, daemon=True).start()
-    threading.Thread(target=carica_calendario_background, daemon=True).start()
-    threading.Thread(target=pre_cache_bindings, daemon=True).start()
+    """Avvia tutti i thread di background nell ordine corretto."""
     if llm_provider == "ollama":
         threading.Thread(target=_warmup_ollama, daemon=True).start()
+
+    def _avvia_resto():
+        time.sleep(3)
+        threading.Thread(target=_carica_posizione, daemon=True).start()
+        threading.Thread(target=carica_calendario_background, daemon=True).start()
+        threading.Thread(target=pre_cache_bindings, daemon=True).start()
+        # Avvia supervisore proattivo con riferimento all LLM (i callbacks UI arrivano al primo messaggio)
+        supervisore_routine.inizializza({}, llm)
+        supervisore_routine.avvia()
+
+    threading.Thread(target=_avvia_resto, daemon=True).start()
 
 
 # ══════════════════════════════════════════════════════════════
@@ -176,6 +186,11 @@ def _seleziona_tool(testo_lower: str) -> list:
     if any(k in testo_lower for k in ["sveglia", "timer", "promemoria", "ricordami", "avvisami",
                                        "tra", "alle ", "minuti", "ore"]):
         tutti_i_tool.append(imposta_sveglia)
+
+    if any(k in testo_lower for k in ["routine", "abitudine", "ogni giorno", "quotidiano",
+                                       "aggiungi alla routine", "rimuovi dalla routine",
+                                       "le mie routine", "cosa ho di routine"]):
+        tutti_i_tool.extend([leggi_routine, aggiungi_alla_routine, rimuovi_dalla_routine])
 
     if any(k in testo_lower for k in ["luce", "led", "accendi", "spegni", "illumina", "lampada",
                                        "scrivania", "luci", "luminosità", "stato luce"]):
@@ -237,20 +252,50 @@ def elabora_risposta(testo_utente: str, ui_callbacks: dict):
     """
     global cronologia_chat
 
+    global _ui_callbacks_globali
     aggiungi = ui_callbacks["aggiungi_messaggio"]
     aggiorna = ui_callbacks["aggiorna_testo"]
     reset_label = ui_callbacks["reset_label"]
     set_stato = ui_callbacks["set_stato"]
+    # Passa i callbacks al supervisore la prima volta
+    if _ui_callbacks_globali is None:
+        _ui_callbacks_globali = ui_callbacks
+        supervisore_routine.inizializza(ui_callbacks, llm)
 
     if testo_utente.strip().lower() in ["/reset", "cancella chat", "dimentica tutto"]:
         cronologia_chat = []
         aggiungi("Sistema", "Cronologia azzerata.", "yellow")
         return
 
+    # ── Intercetta comandi visione — bypass LLM, chiamata diretta multimodale ──
+    TRIGGER_VISIONE = ["cosa vedi", "cosa c'e", "cosa c è", "guarda", "descrivi cosa",
+                       "dimmi cosa vedi", "analizza quello", "cosa noti", "osserva",
+                       "che cosa vedi", "telecamera", "webcam", "fotocamera"]
+    testo_lower_check = testo_utente.strip().lower()
+    if any(k in testo_lower_check for k in TRIGGER_VISIONE):
+        set_stato("thinking")
+        imposta_animazione_pensiero(True)
+        aggiungi("🤖 IDIS", "", "lightblue")
+        # Scatta e analizza in thread (bloccante ~2-5s)
+        domanda_visione = testo_utente if len(testo_utente.split()) > 3 else "Descrivi in dettaglio cosa vedi nell'immagine in italiano."
+        risposta_visione = esegui_visione(domanda_visione, model_local)
+        aggiorna(risposta_visione)
+        imposta_animazione_pensiero(False)
+        set_stato("speaking")
+        cronologia_chat.append(HumanMessage(content=testo_utente))
+        cronologia_chat.append(AIMessage(content=risposta_visione))
+        def _torna_idle_v():
+            time.sleep(3)
+            set_stato("idle")
+        threading.Thread(target=_torna_idle_v, daemon=True).start()
+        return
+
     set_stato("thinking")
     imposta_animazione_pensiero(True)
 
-    SYSTEM_PROMPT_BASE = """Sei IDIS, un assistente IA avanzato.
+    # ✅ [OPT] Prompt Statico per favorire il KV Caching di Ollama
+    # Il grosso del prompt (regole e identità) deve rimanere INVARIATO tra le sessioni.
+    SYSTEM_PROMPT_STATICO = """Sei IDIS, un assistente IA avanzato.
 REGOLE CRITICHE ASSOLUTE:
 1. NON USARE EMOJI O CARATTERI SPECIALI.
 2. Usa i tool ogni volta che l'utente chiede un'azione concreta.
@@ -279,26 +324,23 @@ STATO HW: LED {stato_luce}. MEM: {testo_memoria_json}.
 RICORDI: {testo_ricordi}
 CALENDARIO: {eventi_precaricati[:500]}""" # tronca per evitare prompt troppo lunghi
 
-    # Tool selection — prima dei messaggi per calcolare _usa_tool_specifici
-    testo_lower = testo_utente.lower()
-    tutti_i_tool = _seleziona_tool(testo_lower)
-
-    # ✅ /no_think solo per tool specifici, thinking attivo per risposte testuali
-    _usa_tool_specifici = len(tutti_i_tool) > 2
-    _prefix = "/no_think\n" if _usa_tool_specifici else ""
-    SYSTEM_PROMPT_STATICO = _prefix + SYSTEM_PROMPT_BASE
-
-    # Costruzione messaggi
+    # Costruzione messaggi: Sistema (statico) -> Storia -> Contesto (dinamico) -> Utente
     messaggi_lc = [SystemMessage(content=SYSTEM_PROMPT_STATICO)]
-
+    
     for msg in cronologia_chat[-6:]:
         messaggi_lc.append(msg)
 
+    # Inseriamo il contesto dinamico come SystemMessage prima della domanda utente
+    # Essendo alla fine della catena di prefix, minimizza il ricalcolo.
     messaggi_lc.append(SystemMessage(content=f"CONTESTO ATTUALE:\n{testo_contesto}"))
-
+    
     messaggio_utente_obj = HumanMessage(content=testo_utente)
     messaggi_lc.append(messaggio_utente_obj)
     cronologia_chat.append(messaggio_utente_obj)
+
+    # Tool selection
+    testo_lower = testo_utente.lower()
+    tutti_i_tool = _seleziona_tool(testo_lower)
 
     # ✅ [OPT] bind_tools con cache. Se usiamo tool specifici, usiamo llm_veloce (no CoT lungo)
     tool_key = frozenset(getattr(t, 'name', '') for t in tutti_i_tool)
@@ -308,9 +350,7 @@ CALENDARIO: {eventi_precaricati[:500]}""" # tronca per evitare prompt troppo lun
     
     llm_attivo = _bind_cache[tool_key]
 
-    # ✅ Strategia ibrida:
-    # - Se ci sono tool specifici (>2) → invoke() diretto, evita di aspettare chunk vuoti del thinking
-    # - Se è risposta testuale pura → stream() per mostrare il testo token per token
+    # Streaming
     try:
         reset_label()
         aggiungi("🤖 IDIS", "", "lightblue")
@@ -318,41 +358,34 @@ CALENDARIO: {eventi_precaricati[:500]}""" # tronca per evitare prompt troppo lun
 
         for _ in range(3):
             messaggio_corrente = None
+            _primo_testo_ricevuto = False
 
-            if _usa_tool_specifici:
-                # ✅ invoke() — Ollama pensa internamente e restituisce solo il risultato
-                messaggio_corrente = llm_attivo.invoke(messaggi_lc)
-            else:
-                #TEST con timer
-                for chunk in llm_attivo.stream(messaggi_lc):
+            #TEST con timer
+            _t_stream = time.perf_counter()
+            _chunk_n = 0
+            for chunk in llm_attivo.stream(messaggi_lc):
                     if _chunk_n == 0:
-                        print(f"[TIMER] primo chunk: {_time.perf_counter()-_t_stream:.3f}s")
+                        print(f"[TIMER] primo chunk: {time.perf_counter()-_t_stream:.3f}s")
                     if _chunk_n < 5:
-                        print(f"[DEBUG] chunk {_chunk_n}: {repr(chunk.content)}")  # ← aggiungi questa riga
+                        print(f"[DEBUG] chunk {_chunk_n}: {repr(chunk.content)}")
                     _chunk_n += 1
+
+                    if chunk.content:
+                        if not _primo_testo_ricevuto:
+                            # Passa a speaking e ferma hardware solo al primo vero testo
+                            set_stato("speaking")
+                            imposta_animazione_pensiero(False)
+                            _primo_testo_ricevuto = True
+                        aggiorna(chunk.content)
+
                     if messaggio_corrente is None:
                         messaggio_corrente = chunk
                     else:
                         messaggio_corrente += chunk
-                    if chunk.content:
-                        aggiorna(chunk.content)
 
-            print(f"[TIMER] stream completo: {_time.perf_counter()-_t_stream:.3f}s — {_chunk_n} chunks")
+            print(f"[TIMER] stream completo: {time.perf_counter()-_t_stream:.3f}s — {_chunk_n} chunks")
             
-            """
-                # ✅ stream() — mostra il testo mentre viene generato
-                for chunk in llm_attivo.stream(messaggi_lc):
-                    if messaggio_corrente is None:
-                        messaggio_corrente = chunk
-                    else:
-                        messaggio_corrente += chunk
-                    if chunk.content:
-                        aggiorna(chunk.content)
-
-            risposta = messaggio_corrente"""
-
-
-            
+            risposta = messaggio_corrente
 
             if hasattr(risposta, 'tool_calls') and len(risposta.tool_calls) > 0:
                 messaggi_lc.append(risposta)
@@ -396,19 +429,19 @@ CALENDARIO: {eventi_precaricati[:500]}""" # tronca per evitare prompt troppo lun
             testo_finale = "Azione completata."
             aggiorna(testo_finale)
 
+        # Se non era passato a speaking (es: risposta istantanea), forza ora
         imposta_animazione_pensiero(False)
-        set_stato("speaking")
         cronologia_chat.append(AIMessage(content=testo_finale))
 
-        # Torna in modalità riposo dopo un breve delay
-        def _torna_a_dormire():
-            time.sleep(3)
-            set_stato("sleep")
-        threading.Thread(target=_torna_a_dormire, daemon=True).start()
+        # Torna idle dopo un breve delay
+        def _torna_idle():
+            time.sleep(2)
+            set_stato("idle")
+        threading.Thread(target=_torna_idle, daemon=True).start()
 
     except Exception as e:
         imposta_animazione_pensiero(False)
-        set_stato("sleep")
+        set_stato("idle")
         aggiungi("Errore", f"Errore: {str(e)}", "red")
 
 

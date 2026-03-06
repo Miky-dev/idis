@@ -1342,10 +1342,10 @@
         let T = 0, currentState = 'idle', lerpProgress = 1;
 
         const STATES = {
-            sleep: { speed: .003, noiseAmp: 1.2, pulseAmp: .8, glowA: 'rgba(40,60,90,', glowB: 'rgba(30,45,70,', label: '// RIPOSO', oc: [40, 28, 55] },
-            idle: { speed: .010, noiseAmp: 5, pulseAmp: 2.5, glowA: 'rgba(62,207,255,', glowB: 'rgba(62,207,255,', label: '// IN ASCOLTO', oc: [12, 8, 20] },
-            thinking: { speed: .030, noiseAmp: 13, pulseAmp: 7, glowA: 'rgba(255,179,71,', glowB: 'rgba(255,140,0,', label: '// ELABORAZIONE', oc: [4, 2.5, 6] },
-            speaking: { speed: .044, noiseAmp: 9, pulseAmp: 11, glowA: 'rgba(0,255,163,', glowB: 'rgba(0,200,130,', label: '// IN RISPOSTA', oc: [6, 4, 10] }
+            sleep: { speed: .0015, noiseAmp: 1.2, pulseAmp: .8, glowA: 'rgba(40,60,90,', glowB: 'rgba(30,45,70,', label: '// RIPOSO', oc: [60, 45, 80] },
+            idle: { speed: .005, noiseAmp: 5, pulseAmp: 2.5, glowA: 'rgba(62,207,255,', glowB: 'rgba(62,207,255,', label: '// IN ASCOLTO', oc: [24, 16, 40] },
+            thinking: { speed: .015, noiseAmp: 13, pulseAmp: 7, glowA: 'rgba(255,179,71,', glowB: 'rgba(255,140,0,', label: '// ELABORAZIONE', oc: [12, 8, 20] },
+            speaking: { speed: .022, noiseAmp: 9, pulseAmp: 11, glowA: 'rgba(0,255,163,', glowB: 'rgba(0,200,130,', label: '// IN RISPOSTA', oc: [15, 10, 25] }
         };
 
         let cur = Object.assign({}, STATES.idle), tgt = Object.assign({}, STATES.idle);
@@ -1441,10 +1441,12 @@
 
         // Demo auto disabilitata — lo stato viene controllato da Python via PyWebView
         // In modalità standalone (senza Python) cicla per mostrare gli stati
+        /* 
         if (typeof window.pywebview === 'undefined') {
             let di = 0;
             setInterval(() => { const ss = ['sleep', 'idle', 'thinking', 'speaking']; di = (di + 1) % 4; setState(ss[di]); }, 4000);
         }
+        */
 
         // CHAT
         function apriChat() { document.getElementById('chatPanel').classList.add('open'); document.getElementById('overlay').classList.add('show'); setTimeout(() => document.getElementById('chatInp').focus(), 420); }
