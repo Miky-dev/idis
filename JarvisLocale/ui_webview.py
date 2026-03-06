@@ -72,7 +72,8 @@ class IDISApi:
 
     def get_dati_dashboard(self) -> dict:
         """Restituisce tutti i dati necessari alla dashboard in un colpo solo."""
-        from logica_chat import eventi_precaricati as ev, posizione_cache as pos
+        from logica_chat import eventi_precaricati as ev
+        import actions.tools_location as tl
         sveglie = []
         try:
             sveglie_raw = ottieni_sveglie_attive.invoke({})
@@ -88,7 +89,7 @@ class IDISApi:
 
         return {
             "eventi_calendario": ev,
-            "posizione": pos,
+            "posizione": tl.posizione_cache,
             "sveglie": sveglie,
             "memoria": memoria,
             "stato_led": get_stato_led(),
@@ -136,12 +137,15 @@ class IDISApi:
         while self._window is not None:
             try:
                 # Usa la posizione rilevata (es: "Milan, Italy")
-                from logica_chat import posizione_cache
-                city = posizione_cache.split(',')[0] if "," in posizione_cache else posizione_cache
+                import actions.tools_location as tl
+                import urllib.parse
+                city = tl.posizione_cache.split(',')[0].strip() if "," in tl.posizione_cache else tl.posizione_cache.strip()
                 if not city or "Sconosciuta" in city:
-                    city = "" # Lascia decidere a wttr.in in base all'IP
+                    city_param = "" # Lascia decidere a wttr.in in base all'IP
+                else:
+                    city_param = urllib.parse.quote(city)
 
-                resp = requests.get(f"http://wttr.in/{city}?format=j1", timeout=5).json()
+                resp = requests.get(f"http://wttr.in/{city_param}?format=j1", timeout=10).json()
                 curr = resp['current_condition'][0]
                 
                 # Mapping icone base

@@ -28,6 +28,7 @@ import supervisore_routine
 from tools_arduino import controlla_led, ottieni_stato_led, imposta_animazione_pensiero, get_stato_led
 from tools_memory import leggi_memoria, ricorda_informazione
 from actions.tools_vision import esegui_visione
+from actions.tools_location import ottieni_posizione, posizione_cache
 from actions import tools_tts
 
 load_dotenv()
@@ -112,7 +113,6 @@ def pre_cache_bindings():
 # Stato condiviso
 cronologia_chat = []
 eventi_precaricati = "Non sono ancora stati caricati gli eventi di oggi."
-posizione_cache = "Sconosciuta"
 _ui_callbacks_globali = None  # impostato al primo elabora_risposta
 
 CONFERMA_WHATSAPP = {"sì", "si", "invialo", "manda", "confermo", "ok", "vai", "yes"}
@@ -123,17 +123,10 @@ ANNULLA_WHATSAPP  = {"no", "annulla", "cancella", "stop", "modificalo", "cambia"
 # INIT BACKGROUND
 # ══════════════════════════════════════════════════════════════
 
-def _carica_posizione():
-    global posizione_cache
-    try:
-        risposta_ip = requests.get("http://ip-api.com/json/", timeout=3).json()
-        posizione_cache = f"{risposta_ip.get('city')}, {risposta_ip.get('country')}"
-        print(f"📍 Posizione rilevata: {posizione_cache}")
-    except:
-        posizione_cache = "Sconosciuta (Offline)"
-
+import subprocess
 
 def _warmup_ollama():
+
     """Carica il modello in VRAM con una richiesta chat minima ma reale."""
     try:
         # Usa l'istanza LangChain per essere coerente con il template di chat
@@ -154,8 +147,8 @@ def carica_calendario_background():
 def avvia_background():
     """Avvia tutti i thread di background nell'ordine corretto."""
     def _avvia_sequenza():
-        # 1. Posizione (veloce, rete)
-        _carica_posizione()
+        # 1. Posizione (veloce, rete/GPS)
+        ottieni_posizione.invoke({})
         
         # 2. Calendario (rete)
         carica_calendario_background()
@@ -180,7 +173,7 @@ def avvia_background():
 
 def _seleziona_tool(testo_lower: str) -> list:
     """Determina quali tool rendere disponibili in base al testo utente."""
-    tutti_i_tool = [cerca_su_internet, ricorda_informazione]
+    tutti_i_tool = [cerca_su_internet, ricorda_informazione, ottieni_posizione]
 
     if any(k in testo_lower for k in ["meteo", "tempo", "piove", "pioggia", "sole", "temperatura",
                                        "previsioni", "ombrello", "caldo", "freddo", "neve", "vento"]):
@@ -330,7 +323,8 @@ def elabora_risposta(testo_utente: str, ui_callbacks: dict):
     memoria_strutturata = leggi_memoria()
     testo_memoria_json = ", ".join([f"{k}: {v}" for k, v in memoria_strutturata.items()]) if memoria_strutturata else "Nessun dato personale."
 
-    testo_contesto = f"""Oggi: {giorno_settimana} {data_odierna}. Ora: {ora_minuto}. Posizione: {posizione_cache}
+    import actions.tools_location as tl
+    testo_contesto = f"""Oggi: {giorno_settimana} {data_odierna}. Ora: {ora_minuto}. Posizione: {tl.posizione_cache}
 STATO HW: LED {stato_luce}. MEM: {testo_memoria_json}.
 RICORDI: {testo_ricordi}
 CALENDARIO: {eventi_precaricati[:500]}""" # tronca per evitare prompt troppo lunghi
