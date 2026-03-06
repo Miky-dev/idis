@@ -15,21 +15,23 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, Tool
 from langchain_ollama import ChatOllama
 from langchain_google_genai import ChatGoogleGenerativeAI
 
+import supervisore_routine
+
 from actions.tools_os import apri_applicazione
 from actions.tools_web import cerca_su_internet, apri_sito_web, digita_nel_browser
 from actions.weather_report import mostra_meteo
 from actions.tools_spotify import riproduci_canzone, riproduci_playlist, controlla_spotify, cosa_sta_suonando
 from memoria_vettoriale import salva_ricordo, estrai_ricordi_pertinenti
-from tools_whatsapp import prepara_messaggio_whatsapp, conferma_invio_whatsapp, annulla_messaggio_whatsapp, _messaggio_in_attesa
-from tools_files import crea_cartella, prepara_spostamento_file, conferma_spostamento_file, rinomina_elemento
-from tools_calendar import leggi_calendario, ottieni_eventi_precaricati, aggiungi_evento_calendario, elimina_evento_calendario
+from actions.tools_whatsapp import prepara_messaggio_whatsapp, conferma_invio_whatsapp, annulla_messaggio_whatsapp, _messaggio_in_attesa
+from actions.tools_files import crea_cartella, prepara_spostamento_file, conferma_spostamento_file, rinomina_elemento
+from actions.tools_calendar import leggi_calendario, ottieni_eventi_precaricati, aggiungi_evento_calendario, elimina_evento_calendario
 from tools_routine import imposta_sveglia, ottieni_sveglie_attive, leggi_routine, aggiungi_alla_routine, rimuovi_dalla_routine
-import supervisore_routine
-from tools_arduino import controlla_led, ottieni_stato_led, imposta_animazione_pensiero, get_stato_led
+from actions.tools_arduino import controlla_led, ottieni_stato_led, imposta_animazione_pensiero, get_stato_led
 from tools_memory import leggi_memoria, ricorda_informazione
 from actions.tools_vision import esegui_visione
 from actions.tools_location import ottieni_posizione, posizione_cache
 from actions import tools_tts
+from actions.tools_handmouse import attiva_controllo_mano, disattiva_controllo_mano
 
 load_dotenv()
 
@@ -232,6 +234,11 @@ def _seleziona_tool(testo_lower: str) -> list:
     if any(k in testo_lower for k in ["digita", "cerca su", "scrivi nel browser",
                                        "cerca in google", "cerca su youtube", "metti nella barra"]):
         tutti_i_tool.append(digita_nel_browser)
+
+    if any(k in testo_lower for k in ["controllo mano", "controllo remoto", "hand mouse", "handmouse",
+                                       "attiva controllo remoto", "disattiva controllo remoto", "mouse con la mano",
+                                       "usa la mano", "gesti mano", "attiva mano", "disattiva mano", "dammi poteri", "poteri", "togli poteri"]):
+        tutti_i_tool.extend([attiva_controllo_mano, disattiva_controllo_mano]) 
 
     # Rimuovi duplicati
     visti = set()
