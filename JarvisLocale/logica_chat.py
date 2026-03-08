@@ -32,6 +32,8 @@ from actions.tools_vision import esegui_visione
 from actions.tools_location import ottieni_posizione, posizione_cache
 from actions import tools_tts
 from actions.tools_handmouse import attiva_controllo_mano, disattiva_controllo_mano
+from automations.tools_mail import leggi_mail_importanti 
+
 
 load_dotenv()
 
@@ -256,6 +258,10 @@ def _seleziona_tool(testo_lower: str) -> list:
 # ══════════════════════════════════════════════════════════════
 
 def elabora_risposta(testo_utente: str, ui_callbacks: dict):
+    import supervisore_routine
+    supervisore_routine.aggiorna_ultimo_messaggio()
+    if supervisore_routine.gestisci_conferma_mail(testo_utente.lower()): 
+        return
     """
     Elabora il messaggio dell'utente: costruisce il prompt, chiama l'LLM con streaming,
     gestisce i tool calls. Comunica con la UI tramite i callback.

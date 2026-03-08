@@ -1,34 +1,101 @@
 """
-supervisore_routine.py — Supervisore proattivo di IDIS.
-Gira in background ogni 60 secondi e:
-  1. Controlla le routine in routine_config.json — avvisa se un task coincide con l'orario attuale
-  2. Controlla il calendario — avvisa 15 minuti prima di un evento con un consiglio generato dall'LLM
+supervisore_routine.py — Supervisore proattivo di IDIS (ottimizzato).
+
+Miglioramenti rispetto alla versione precedente:
+  - Loop temporizzato preciso (sleep adattivo, no deriva)
+  - Cache routine in memoria con invalidazione su modifica file
+  - Correzione datetime UTC per Google Calendar API
+  - Timeout su thread LLM (max 15s) — evita accumulo thread
+  - Guard eccezioni granulari con log strutturato
+  - Stato mail: pausa post-messaggio, pausa avvio, no run paralleli
+  - Token refresh sicuro nel thread background
+  - winsound asincrono (SND_ASYNC) — non blocca il loop
 """
 
 import datetime
 import threading
 import time
 import json
-import winsound
 import os
 
-# ── Stato interno ─────────────────────────────────────────────
-_routine_gia_notificate = set()   # "HH:MM|task" — evita doppie notifiche nella stessa ora
-_eventi_gia_notificati  = set()   # titolo evento — evita doppio avviso per lo stesso evento
+try:
+    import winsound
+    _HAS_WINSOUND = True
+except ImportError:
+    _HAS_WINSOUND = False
 
-# ── Riferimento ai callback UI e all'LLM (impostati da logica_chat.py) ───
+# ── Logging interno leggero ───────────────────────────────────
+def _log(tag: str, msg: str):
+    ts = datetime.datetime.now().strftime("%H:%M:%S")
+    print(f"[{ts}][SUP/{tag}] {msg}")
+
+
+# ══════════════════════════════════════════════════════════════
+# STATO INTERNO
+# ══════════════════════════════════════════════════════════════
+
+_routine_gia_notificate = set()
+_eventi_gia_notificati  = set()
+
 _ui_callbacks = None
 _llm           = None
 
+# Cache routine — ricaricata solo se il file cambia
+_routine_cache       = None
+_routine_cache_mtime = 0.0
+
+# Stato mail
+_ultimo_messaggio_utente = 0.0
+_avvio_app               = time.time()
+_ultimo_check_mail       = 0.0
+_mail_in_attesa_conferma = []
+_check_mail_in_corso     = False
+
+INTERVALLO_MAIL = 3600   # 1 ora
+PAUSA_DOPO_MSG  = 300    # 5 min di silenzio dopo l'ultimo messaggio
+PAUSA_AVVIO     = 600    # 10 min dopo avvio prima del primo check
+LLM_TIMEOUT     = 15     # secondi max per risposta LLM consiglio evento
+
+
+# ══════════════════════════════════════════════════════════════
+# API PUBBLICA
+# ══════════════════════════════════════════════════════════════
 
 def inizializza(ui_callbacks: dict, llm):
-    """
-    Chiamato da logica_chat.avvia_background() per passare i riferimenti
-    alla UI e al modello LLM.
-    """
+    """Chiamato da logica_chat.avvia_background()."""
     global _ui_callbacks, _llm
     _ui_callbacks = ui_callbacks
     _llm          = llm
+
+
+def aggiorna_ultimo_messaggio():
+    """Chiamato da logica_chat.elabora_risposta() ad ogni messaggio utente."""
+    global _ultimo_messaggio_utente
+    _ultimo_messaggio_utente = time.time()
+
+
+def gestisci_conferma_mail(testo_lower: str) -> bool:
+    """
+    Intercetta sì/no per aggiunta eventi al calendario da mail.
+    Ritorna True se gestito qui (logica_chat non deve passare all'LLM).
+    """
+    global _mail_in_attesa_conferma
+    if not _mail_in_attesa_conferma:
+        return False
+
+    si = testo_lower.strip() in ("sì","si","yes","ok","aggiungi","confermo","certo","vai")
+    no = testo_lower.strip() in ("no","annulla","non aggiungere","skip","lascia perdere")
+
+    if not si and not no:
+        return False
+
+    if si:
+        _aggiungi_eventi_calendario(_mail_in_attesa_conferma)
+    else:
+        _notifica("Ok, non aggiungo nulla al calendario.")
+
+    _mail_in_attesa_conferma = []
+    return True
 
 
 # ══════════════════════════════════════════════════════════════
@@ -36,13 +103,38 @@ def inizializza(ui_callbacks: dict, llm):
 # ══════════════════════════════════════════════════════════════
 
 def _notifica(testo: str):
-    """Manda un messaggio nella chat di IDIS e suona un beep."""
-    try:
-        winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS)
-    except Exception:
-        pass
+    """Manda un messaggio in chat e beep asincrono (non blocca il loop)."""
+    if _HAS_WINSOUND:
+        try:
+            winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS | winsound.SND_ASYNC)
+        except Exception:
+            pass
     if _ui_callbacks and "aggiungi_messaggio" in _ui_callbacks:
-        _ui_callbacks["aggiungi_messaggio"]("🔔 IDIS", testo, "lightyellow")
+        try:
+            _ui_callbacks["aggiungi_messaggio"]("🔔 IDIS", testo)
+        except Exception as e:
+            _log("NOTIFICA", f"Errore callback UI: {e}")
+
+
+# ══════════════════════════════════════════════════════════════
+# CACHE ROUTINE
+# ══════════════════════════════════════════════════════════════
+
+def _get_routine() -> list:
+    """Lista routine dalla cache — ricarica da disco solo se il file è cambiato."""
+    global _routine_cache, _routine_cache_mtime
+    try:
+        from tools_routine import ROUTINE_PATH, _carica_routine
+        mtime = os.path.getmtime(ROUTINE_PATH) if os.path.exists(ROUTINE_PATH) else 0.0
+        if _routine_cache is None or mtime != _routine_cache_mtime:
+            _routine_cache       = _carica_routine().get("routine", [])
+            _routine_cache_mtime = mtime
+            _log("ROUTINE", f"Cache aggiornata — {len(_routine_cache)} voci.")
+    except Exception as e:
+        _log("ROUTINE", f"Errore caricamento: {e}")
+        if _routine_cache is None:
+            _routine_cache = []
+    return _routine_cache
 
 
 # ══════════════════════════════════════════════════════════════
@@ -50,36 +142,27 @@ def _notifica(testo: str):
 # ══════════════════════════════════════════════════════════════
 
 def _controlla_routine():
-    """Controlla se l'orario attuale corrisponde a una routine configurata."""
-    from tools_routine import _carica_routine
-
-    adesso = datetime.datetime.now()
+    adesso      = datetime.datetime.now()
     ora_attuale = adesso.strftime("%H:%M")
-    giorno = adesso.weekday()  # 0=lun … 6=dom
+    giorno      = adesso.weekday()
 
-    data = _carica_routine()
-    for r in data.get("routine", []):
+    for r in _get_routine():
         if r.get("orario") != ora_attuale:
             continue
-
-        # Controlla giorni
         giorni = r.get("giorni", "tutti").lower()
-        if giorni not in ("tutti", "every day"):
-            if giorni == "lun-ven" and giorno >= 5:
-                continue
-            if giorni == "weekend" and giorno < 5:
-                continue
-
+        if giorni == "lun-ven" and giorno >= 5:
+            continue
+        if giorni == "weekend" and giorno < 5:
+            continue
         chiave = f"{ora_attuale}|{r['task']}"
         if chiave in _routine_gia_notificate:
             continue
-
         _routine_gia_notificate.add(chiave)
         _notifica(f"Routine — {r['task']}")
+        _log("ROUTINE", f"Notificato: {r['task']}")
 
-    # Pulizia chiavi vecchie (ora diversa)
-    da_rimuovere = {c for c in _routine_gia_notificate if not c.startswith(ora_attuale)}
-    _routine_gia_notificate.difference_update(da_rimuovere)
+    vecchie = {c for c in _routine_gia_notificate if not c.startswith(ora_attuale)}
+    _routine_gia_notificate.difference_update(vecchie)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -87,85 +170,217 @@ def _controlla_routine():
 # ══════════════════════════════════════════════════════════════
 
 def _genera_consiglio_llm(titolo_evento: str) -> str:
-    """
-    Chiede all'LLM un brevissimo consiglio su come prepararsi all'evento.
-    Usa invoke() diretto — niente streaming, niente tool call.
-    """
+    """Consiglio LLM con timeout — non blocca mai il supervisore."""
     if _llm is None:
         return ""
-    try:
-        from langchain_core.messages import SystemMessage, HumanMessage
-        prompt = [
-            SystemMessage(content="/no_think\nSei IDIS. Rispondi in UNA sola frase breve in italiano. Niente emoji."),
-            HumanMessage(content=f"L'utente ha '{titolo_evento}' tra 15 minuti. Dai un consiglio pratico brevissimo su cosa preparare.")
-        ]
-        risposta = _llm.invoke(prompt)
-        testo = risposta.content
-        if isinstance(testo, list):
-            testo = "".join(p.get("text", "") if isinstance(p, dict) else str(p) for p in testo)
-        return testo.strip()
-    except Exception as e:
+
+    risultato = [None]
+
+    def _chiedi():
+        try:
+            from langchain_core.messages import SystemMessage, HumanMessage
+            prompt = [
+                SystemMessage(content="/no_think\nSei IDIS. Rispondi in UNA sola frase breve in italiano. Niente emoji."),
+                HumanMessage(content=f"L'utente ha '{titolo_evento}' tra 15 minuti. Dai un consiglio pratico brevissimo.")
+            ]
+            risposta = _llm.invoke(prompt)
+            testo = risposta.content
+            if isinstance(testo, list):
+                testo = "".join(p.get("text","") if isinstance(p,dict) else str(p) for p in testo)
+            risultato[0] = testo.strip()
+        except Exception as e:
+            _log("CALENDARIO", f"Errore LLM: {e}")
+
+    t = threading.Thread(target=_chiedi, daemon=True)
+    t.start()
+    t.join(timeout=LLM_TIMEOUT)
+    if t.is_alive():
+        _log("CALENDARIO", f"Timeout LLM per '{titolo_evento}'")
         return ""
+    return risultato[0] or ""
 
 
 def _controlla_calendario():
-    """Controlla se c'è un evento che inizia tra ~15 minuti e invia un avviso con consiglio LLM."""
+    """Avviso 15 min prima di un evento. Usa UTC corretto per Google API."""
     try:
-        from tools_calendar import ottieni_servizio_calendario
-        import datetime
+        from actions.tools_calendar import ottieni_servizio_calendario
 
-        adesso = datetime.datetime.now()
-        tra_14 = adesso + datetime.timedelta(minutes=14)
-        tra_16 = adesso + datetime.timedelta(minutes=16)
+        # Google Calendar API vuole UTC — usiamo utcnow() non now()
+        adesso_utc = datetime.datetime.utcnow()
+        tra_14     = adesso_utc + datetime.timedelta(minutes=14)
+        tra_16     = adesso_utc + datetime.timedelta(minutes=16)
 
         service = ottieni_servizio_calendario()
-        result = service.events().list(
-            calendarId="primary",
-            timeMin=tra_14.isoformat() + "Z",
-            timeMax=tra_16.isoformat() + "Z",
-            singleEvents=True,
-            orderBy="startTime"
+        result  = service.events().list(
+            calendarId   = "primary",
+            timeMin      = tra_14.isoformat() + "Z",
+            timeMax      = tra_16.isoformat() + "Z",
+            singleEvents = True,
+            orderBy      = "startTime"
         ).execute()
 
         for event in result.get("items", []):
             titolo = event.get("summary", "Evento senza titolo")
             if titolo in _eventi_gia_notificati:
                 continue
-
             _eventi_gia_notificati.add(titolo)
 
-            # Genera consiglio in thread separato per non bloccare il supervisore
-            def _invia_avviso(t=titolo):
+            def _invia(t=titolo):
                 consiglio = _genera_consiglio_llm(t)
                 msg = f"Tra 15 minuti: {t}."
                 if consiglio:
                     msg += f"\n{consiglio}"
                 _notifica(msg)
+                _log("CALENDARIO", f"Avviso: {t}")
 
-            threading.Thread(target=_invia_avviso, daemon=True).start()
+            threading.Thread(target=_invia, daemon=True).start()
 
-    except Exception:
-        pass  # Calendario non disponibile (offline, token scaduto, ecc.)
+    except Exception as e:
+        _log("CALENDARIO", f"Errore: {e}")
 
 
 # ══════════════════════════════════════════════════════════════
-# LOOP PRINCIPALE
+# CONTROLLO MAIL
+# ══════════════════════════════════════════════════════════════
+
+def _controlla_mail():
+    """Controlla inbox ogni ora con tutte le guard di timing."""
+    global _ultimo_check_mail, _check_mail_in_corso, _mail_in_attesa_conferma
+
+    if _llm is None or _ui_callbacks is None:
+        return
+
+    adesso = time.time()
+    if _check_mail_in_corso:                               return
+    if adesso - _avvio_app < PAUSA_AVVIO:                  return
+    if adesso - _ultimo_messaggio_utente < PAUSA_DOPO_MSG: return
+    if adesso - _ultimo_check_mail < INTERVALLO_MAIL:      return
+
+    _check_mail_in_corso = True
+    _ultimo_check_mail   = adesso
+
+    def _esegui():
+        global _check_mail_in_corso, _mail_in_attesa_conferma
+        try:
+            from automations.tools_mail import fetch_mail_recenti, classifica_mail_con_llm, segna_come_lette
+            _log("MAIL", "Avvio controllo inbox...")
+
+            mail_list = fetch_mail_recenti(max_mail=20)
+            if not mail_list:
+                _log("MAIL", "Nessuna mail non letta.")
+                return
+
+            # Thinking attivo — NO /no_think per qualità classificazione
+            classificate = classifica_mail_con_llm(mail_list, _llm)
+
+            if not classificate:
+                _log("MAIL", f"{len(mail_list)} mail — nessuna rilevante.")
+                segna_come_lette([m["id"] for m in mail_list])
+                return
+
+            righe           = []
+            eventi_con_data = []
+            for m in classificate:
+                righe.append(f"{m.get('emoji','📧')} {m['riassunto']}")
+                if m.get("ha_data") and m.get("titolo_evento") and m.get("data_estratta"):
+                    eventi_con_data.append(m)
+
+            msg = f"Ho controllato la tua inbox — {len(classificate)} mail importanti:\n"
+            msg += "\n".join(righe)
+
+            if eventi_con_data:
+                _mail_in_attesa_conferma = eventi_con_data
+                titoli = ", ".join(
+                    f"'{e['titolo_evento']}' ({e['data_estratta']})"
+                    for e in eventi_con_data
+                )
+                msg += f"\n\nVuoi che aggiunga al calendario: {titoli}? Rispondi sì o no."
+
+            _notifica(msg)
+            segna_come_lette([m["mail_id"] for m in classificate])
+            _log("MAIL", f"Notificate {len(classificate)}, eventi con data: {len(eventi_con_data)}.")
+
+        except Exception as e:
+            _log("MAIL", f"Errore: {e}")
+        finally:
+            _check_mail_in_corso = False
+
+    threading.Thread(target=_esegui, daemon=True, name="MailCheck").start()
+
+
+def _aggiungi_eventi_calendario(eventi: list):
+    """Aggiunge al Google Calendar gli eventi estratti dalle mail."""
+    try:
+        from actions.tools_calendar import ottieni_servizio_calendario
+        import dateparser as dp
+
+        service  = ottieni_servizio_calendario()
+        aggiunti = []
+
+        for evento in eventi:
+            try:
+                data = dp.parse(
+                    evento["data_estratta"],
+                    languages=["it"],
+                    settings={"PREFER_DATES_FROM": "future"}
+                )
+                if not data:
+                    _log("MAIL", f"Data non parsabile: {evento['data_estratta']}")
+                    continue
+                data_fine = data + datetime.timedelta(hours=1)
+                ev = {
+                    "summary": evento["titolo_evento"],
+                    "start": {"dateTime": data.isoformat(), "timeZone": "Europe/Rome"},
+                    "end":   {"dateTime": data_fine.isoformat(), "timeZone": "Europe/Rome"},
+                }
+                service.events().insert(calendarId="primary", body=ev).execute()
+                aggiunti.append(evento["titolo_evento"])
+                _log("MAIL", f"Evento aggiunto: {evento['titolo_evento']}")
+            except Exception as e:
+                _log("MAIL", f"Errore evento '{evento.get('titolo_evento')}': {e}")
+
+        msg = f"Aggiunto al calendario: {', '.join(aggiunti)}." if aggiunti else "Nessun evento aggiunto (date non riconosciute)."
+        _notifica(msg)
+
+    except Exception as e:
+        _notifica(f"Errore aggiunta calendario: {e}")
+        _log("MAIL", f"Errore _aggiungi_eventi_calendario: {e}")
+
+
+# ══════════════════════════════════════════════════════════════
+# LOOP PRINCIPALE — sleep adattivo, no deriva temporale
 # ══════════════════════════════════════════════════════════════
 
 def _loop():
-    """Loop infinito — gira ogni 60 secondi."""
-    # Aspetta 10s dopo l'avvio per dare tempo al warmup
-    time.sleep(10)
+    """
+    Loop preciso con sleep adattivo.
+    Misura il tempo di esecuzione dei check e dorme
+    solo il tempo rimanente fino al prossimo tick da 60s.
+    Questo evita la deriva che si accumula con un semplice time.sleep(60)
+    quando i check stessi impiegano qualche millisecondo.
+    """
+    time.sleep(10)   # Attesa warmup iniziale
+    _log("LOOP", "Supervisore avviato.")
+
     while True:
-        try:
-            _controlla_routine()
-            _controlla_calendario()
-        except Exception:
-            pass
-        time.sleep(60)
+        tick_start = time.time()
+
+        try:    _controlla_routine()
+        except Exception as e: _log("LOOP", f"Eccezione routine: {e}")
+
+        try:    _controlla_calendario()
+        except Exception as e: _log("LOOP", f"Eccezione calendario: {e}")
+
+        try:    _controlla_mail()
+        except Exception as e: _log("LOOP", f"Eccezione mail: {e}")
+
+        # Dorme il tempo residuo fino al prossimo minuto
+        elapsed  = time.time() - tick_start
+        to_sleep = max(0.5, 60.0 - elapsed)
+        time.sleep(to_sleep)
 
 
 def avvia():
     """Avvia il supervisore in un thread daemon. Chiamato da logica_chat.avvia_background()."""
     threading.Thread(target=_loop, daemon=True, name="SupervisoreRoutine").start()
-    print("👁️  Supervisore routine avviato.")
+    _log("AVVIO", "Thread supervisore avviato.")
