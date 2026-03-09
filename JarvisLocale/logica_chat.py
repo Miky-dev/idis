@@ -17,6 +17,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 import supervisore_routine
 
+from automations.tools_routine_learning import rileva_e_registra, mostra_profilo_routine
 from actions.tools_os import apri_applicazione
 from actions.tools_web import cerca_su_internet, apri_sito_web, digita_nel_browser
 from actions.weather_report import mostra_meteo
@@ -203,7 +204,7 @@ def _seleziona_tool(testo_lower: str) -> list:
     if any(k in testo_lower for k in ["routine", "abitudine", "ogni giorno", "quotidiano",
                                        "aggiungi alla routine", "rimuovi dalla routine",
                                        "le mie routine", "cosa ho di routine"]):
-        tutti_i_tool.extend([leggi_routine, aggiungi_alla_routine, rimuovi_dalla_routine])
+        tutti_i_tool.extend([leggi_routine, aggiungi_alla_routine, rimuovi_dalla_routine, mostra_profilo_routine])
 
     if any(k in testo_lower for k in ["luce", "led", "accendi", "spegni", "illumina", "lampada",
                                        "scrivania", "luci", "luminosità", "stato luce"]):
@@ -259,9 +260,10 @@ def _seleziona_tool(testo_lower: str) -> list:
 
 def elabora_risposta(testo_utente: str, ui_callbacks: dict):
     import supervisore_routine
+    rileva_e_registra(testo_utente)
     supervisore_routine.aggiorna_ultimo_messaggio()
-    if supervisore_routine.gestisci_conferma_mail(testo_utente.lower()): 
-        return
+    if supervisore_routine.gestisci_conferma_learning(testo_utente.lower()): return
+    if supervisore_routine.gestisci_conferma_mail(testo_utente.lower()): return
     """
     Elabora il messaggio dell'utente: costruisce il prompt, chiama l'LLM con streaming,
     gestisce i tool calls. Comunica con la UI tramite i callback.

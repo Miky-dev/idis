@@ -132,13 +132,37 @@ class IDISApi:
                 print(f"Error monitor: {e}")
             time.sleep(2)
 
+    def _monitor_calendario(self):
+        """Thread che attende il caricamento del calendario e lo invia alla UI."""
+        from logica_chat import eventi_precaricati
+        placeholder = "Non sono ancora stati caricati gli eventi di oggi."
+        
+        # Attendi finché il testo non cambia dal placeholder iniziale (max 30 sec)
+        tentativi = 0
+        while self._window is not None and tentativi < 15:
+            from logica_chat import eventi_precaricati as ev_actual
+            if ev_actual != placeholder and not ev_actual.startswith("Errore"):
+                self._js("aggiornaCalendario", ev_actual)
+                print("📅 Calendario precaricato inviato alla Dashboard.")
+                break
+            time.sleep(2)
+            tentativi += 1
+
     def _monitor_meteo(self):
         """Thread che aggiorna il meteo ogni ora."""
+        
+        tentativi_attesa = 0
         while self._window is not None:
             try:
-                # Usa la posizione rilevata (es: "Milan, Italy")
                 import actions.tools_location as tl
                 import urllib.parse
+                
+                # Attendi un po' se la posizione è ancora Sconosciuta all'avvio (max 20 sec)
+                if tl.posizione_cache == "Sconosciuta" and tentativi_attesa < 10:
+                    time.sleep(2)
+                    tentativi_attesa += 1
+                    continue
+                    
                 city = tl.posizione_cache.split(',')[0].strip() if "," in tl.posizione_cache else tl.posizione_cache.strip()
                 if not city or "Sconosciuta" in city:
                     city_param = "" # Lascia decidere a wttr.in in base all'IP
@@ -172,6 +196,9 @@ class IDISApi:
                 print(f"☁️ Meteo aggiornato per {city or 'tua posizione'}: {data['temp']}°C, {data['desc']}")
             except Exception as e:
                 print(f"Error weather monitor: {e}")
+            
+            # Reset dei tentativi per i cicli futuri
+            tentativi_attesa = 10
             
             # Aspetta 1 ora (3600 secondi)
             time.sleep(3600)
@@ -222,9 +249,10 @@ def avvia_ui():
         dati = api.get_dati_dashboard()
         api._js("inizializzaDashboard", dati)
         api._set_stato_sfera("idle")
-        # Avvia monitoraggio sistema e meteo
+        # Avvia monitoraggio sistema, meteo e calendario
         threading.Thread(target=api._monitor_sistema, daemon=True).start()
         threading.Thread(target=api._monitor_meteo, daemon=True).start()
+        threading.Thread(target=api._monitor_calendario, daemon=True).start()
 
     window.events.loaded += on_loaded
 

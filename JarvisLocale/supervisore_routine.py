@@ -48,12 +48,14 @@ _routine_cache_mtime = 0.0
 _ultimo_messaggio_utente = 0.0
 _avvio_app               = time.time()
 _ultimo_check_mail       = 0.0
-_mail_in_attesa_conferma = []
-_check_mail_in_corso     = False
+_mail_in_attesa_conferma  = []
+_check_mail_in_corso      = False
+_learning_in_attesa       = {}   # chiave → messaggio proposta routine learning
 
 INTERVALLO_MAIL = 3600   # 1 ora
 PAUSA_DOPO_MSG  = 300    # 5 min di silenzio dopo l'ultimo messaggio
-PAUSA_AVVIO     = 600    # 10 min dopo avvio prima del primo check
+PAUSA_AVVIO     = 60    # 1 min dopo avvio prima del primo check
+#PAUSA_AVVIO     = 600    # 10 min dopo avvio prima del primo check
 LLM_TIMEOUT     = 15     # secondi max per risposta LLM consiglio evento
 
 
@@ -72,6 +74,35 @@ def aggiorna_ultimo_messaggio():
     """Chiamato da logica_chat.elabora_risposta() ad ogni messaggio utente."""
     global _ultimo_messaggio_utente
     _ultimo_messaggio_utente = time.time()
+
+
+def gestisci_conferma_learning(testo_lower: str) -> bool:
+    """
+    Intercetta sì/no per aggiunta routine imparata al routine_config.json.
+    Chiamato da logica_chat prima di passare all'LLM.
+    """
+    global _learning_in_attesa
+    if not _learning_in_attesa:
+        return False
+
+    si = testo_lower.strip() in ("sì","si","yes","ok","aggiungi","confermo","certo","vai")
+    no = testo_lower.strip() in ("no","annulla","non aggiungere","skip","lascia perdere")
+    if not si and not no:
+        return False
+
+    if si:
+        try:
+            from automations.tools_routine_learning import conferma_aggiunta_routine
+            for chiave in list(_learning_in_attesa.keys()):
+                conferma_aggiunta_routine(chiave)
+            _notifica("Routine aggiunta con successo.")
+        except Exception as e:
+            _notifica(f"Errore aggiunta routine: {e}")
+    else:
+        _notifica("Ok, continuerò solo ad osservare.")
+
+    _learning_in_attesa = {}
+    return True
 
 
 def gestisci_conferma_mail(testo_lower: str) -> bool:
@@ -265,7 +296,7 @@ def _controlla_mail():
             from automations.tools_mail import fetch_mail_recenti, classifica_mail_con_llm, segna_come_lette
             _log("MAIL", "Avvio controllo inbox...")
 
-            mail_list = fetch_mail_recenti(max_mail=20)
+            mail_list = fetch_mail_recenti(max_mail=10)
             if not mail_list:
                 _log("MAIL", "Nessuna mail non letta.")
                 return
@@ -348,6 +379,32 @@ def _aggiungi_eventi_calendario(eventi: list):
 
 
 # ══════════════════════════════════════════════════════════════
+# CONTROLLO ROUTINE LEARNING
+# ══════════════════════════════════════════════════════════════
+
+def _controlla_learning():
+    """
+    Chiamato ogni ora dal loop. Verifica se ci sono attività che hanno
+    raggiunto confidenza >= 80% e propone aggiornamento routine_config.json.
+    """
+    global _learning_in_attesa
+    if _ui_callbacks is None:
+        return
+    try:
+        from automations.tools_routine_learning import controlla_stabilizzazioni
+
+        def _notifica_learning(msg: str, chiave: str):
+            global _learning_in_attesa
+            _learning_in_attesa[chiave] = msg
+            _notifica(msg)
+            _log("LEARNING", f"Proposta: {chiave}")
+
+        controlla_stabilizzazioni(notifica_fn=_notifica_learning)
+    except Exception as e:
+        _log("LEARNING", f"Errore: {e}")
+
+
+# ══════════════════════════════════════════════════════════════
 # LOOP PRINCIPALE — sleep adattivo, no deriva temporale
 # ══════════════════════════════════════════════════════════════
 
@@ -373,6 +430,9 @@ def _loop():
 
         try:    _controlla_mail()
         except Exception as e: _log("LOOP", f"Eccezione mail: {e}")
+
+        try:    _controlla_learning()
+        except Exception as e: _log("LOOP", f"Eccezione learning: {e}")
 
         # Dorme il tempo residuo fino al prossimo minuto
         elapsed  = time.time() - tick_start

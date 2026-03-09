@@ -34,7 +34,19 @@ def ottieni_servizio_gmail():
     creds_path = 'credentials.json' if os.path.exists('credentials.json') else os.path.join('..', 'credentials.json')
 
     if os.path.exists(token_path):
-        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
+        with open(token_path, "r", encoding="utf-8") as f:
+            token_data = json.load(f)
+        
+        token_scopes = token_data.get("scopes", [])
+        if not any("gmail" in s for s in token_scopes):
+            print("[MAIL] Il token esistente non ha i permessi Gmail, richiedo nuova autorizzazione...")
+            creds = None
+            try:
+                os.remove(token_path)
+            except Exception:
+                pass
+        else:
+            creds = Credentials.from_authorized_user_file(token_path, SCOPES)
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
@@ -73,13 +85,15 @@ def _decodifica_body(payload) -> str:
     return body[:2000]  # Tronca per non saturare il prompt
 
 
-def fetch_mail_recenti(max_mail: int = 20) -> list[dict]:
+def fetch_mail_recenti(max_mail: int = 10) -> list[dict]:
     """
     Recupera le ultime N mail non lette dalla inbox.
     Ritorna lista di dict con: id, mittente, oggetto, data, corpo.
     """
     try:
+        print("[MAIL-DEBUG] Avvio ottieni_servizio_gmail()")
         service = ottieni_servizio_gmail()
+        print("[MAIL-DEBUG] Servizio Gmail ottenuto. Eseguo list()")
         risultati = service.users().messages().list(
             userId='me',
             labelIds=['INBOX', 'UNREAD'],
@@ -87,9 +101,11 @@ def fetch_mail_recenti(max_mail: int = 20) -> list[dict]:
         ).execute()
 
         messaggi = risultati.get('messages', [])
+        print(f"[MAIL-DEBUG] Trovati {len(messaggi)} messaggi non letti.")
         mail_list = []
 
-        for msg in messaggi:
+        for i, msg in enumerate(messaggi):
+            print(f"[MAIL-DEBUG] Fetch dettaglio per messaggio {i+1}/{len(messaggi)}")
             dettaglio = service.users().messages().get(
                 userId='me',
                 id=msg['id'],
@@ -107,6 +123,7 @@ def fetch_mail_recenti(max_mail: int = 20) -> list[dict]:
                 'corpo':    corpo,
             })
 
+        print("[MAIL-DEBUG] Fetch mail completato.")
         return mail_list
     except Exception as e:
         print(f"[MAIL] Errore fetch: {e}")
@@ -121,6 +138,7 @@ def classifica_mail_con_llm(mail_list: list[dict], llm) -> list[dict]:
     if not llm or not mail_list:
         return []
 
+    print(f"[MAIL-DEBUG] Inizio classificazione di {len(mail_list)} mail tramite LLM...")
     from langchain_core.messages import SystemMessage, HumanMessage
 
     SYSTEM = """Sei un assistente che classifica email in italiano.
@@ -148,10 +166,15 @@ Oggetto: {mail['oggetto']}
 Data: {mail['data']}
 Corpo: {mail['corpo'][:800]}"""
 
+            print(f"[MAIL-DEBUG] Analisi mail '{mail['oggetto']}' in attesa dell'LLM (senza limiti di tempo)...")
+            
             risposta = llm.invoke([
                 SystemMessage(content=SYSTEM),
                 HumanMessage(content=prompt_mail)
             ])
+
+            if not risposta:
+                continue
 
             testo = risposta.content
             if isinstance(testo, list):
@@ -203,7 +226,7 @@ def leggi_mail_importanti() -> str:
     'cosa mi è arrivato per email', 'aggiornamenti email'.
     """
     try:
-        mail_list = fetch_mail_recenti(max_mail=15)
+        mail_list = fetch_mail_recenti(max_mail=10)
         if not mail_list:
             return "Nessuna mail non letta nella inbox."
 
