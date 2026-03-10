@@ -103,6 +103,19 @@ class IDISApi:
         from logica_chat import cronologia_chat
         cronologia_chat.clear()
 
+    def apri_meteo_browser(self) -> None:
+        """Apre il browser con il meteo per la posizione attuale GPS."""
+        import webbrowser
+        import actions.tools_location as tl
+        import urllib.parse
+        city = tl.posizione_cache.split(',')[0].strip() if "," in tl.posizione_cache else tl.posizione_cache.strip()
+        if not city or "Sconosciuta" in city:
+            query = "meteo oggi"
+        else:
+            query = f"meteo {city}"
+        url = f"https://www.google.com/search?q={urllib.parse.quote(query)}"
+        webbrowser.open(url)
+
     # ── Controllo sfera ───────────────────────────────────────
 
     def _set_stato_sfera(self, stato: str):
@@ -114,39 +127,72 @@ class IDISApi:
         return self._stato_sfera
 
     def _monitor_sistema(self):
-        """Thread che invia statistiche di sistema a JS ogni 3 secondi."""
+        """Thread che invia CPU, RAM, VRAM e stato Arduino/LED a JS ogni 3 secondi."""
+        # Inizializza pynvml una volta sola
+        _nvml_ok = False
+        try:
+            import pynvml
+            pynvml.nvmlInit()
+            _nvml_handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+            _nvml_info   = pynvml.nvmlDeviceGetMemoryInfo(_nvml_handle)
+            _vram_total  = _nvml_info.total / (1024 ** 3)
+            _nvml_ok     = True
+            print(f"[MONITOR] VRAM totale GPU0: {_vram_total:.1f} GB")
+        except Exception as e:
+            print(f"[MONITOR] pynvml non disponibile: {e} — installa con: pip install pynvml")
+
+        _ultimo_led_stato = None   # per aggiornare solo quando cambia
+
         while self._window is not None:
             try:
+                # ── CPU ──────────────────────────────────────────────
                 cpu = psutil.cpu_percent(interval=1)
-                ram = psutil.virtual_memory()
-                used_gb = ram.used / (1024 ** 3)
-                total_gb = ram.total / (1024 ** 3)
-                
+
+                # ── RAM ──────────────────────────────────────────────
+                ram        = psutil.virtual_memory()
+                ram_used   = ram.used  / (1024 ** 3)
+                ram_total  = ram.total / (1024 ** 3)
+
+                # ── VRAM ─────────────────────────────────────────────
+                vram_pct = None
+                vram_txt = "N/D"
+                if _nvml_ok:
+                    try:
+                        mem_info  = pynvml.nvmlDeviceGetMemoryInfo(_nvml_handle)
+                        vram_used = mem_info.used  / (1024 ** 3)
+                        vram_tot  = mem_info.total / (1024 ** 3)
+                        vram_pct  = (mem_info.used / mem_info.total) * 100
+                        vram_txt  = f"{vram_used:.1f} / {vram_tot:.0f} GB"
+                    except Exception:
+                        pass
+
                 stats = {
-                    "cpu_pct": cpu,
-                    "ram_pct": ram.percent,
-                    "ram_txt": f"{used_gb:.1f} / {total_gb:.0f} GB"
+                    "cpu_pct":  cpu,
+                    "ram_pct":  ram.percent,
+                    "ram_txt":  f"{ram_used:.1f} / {ram_total:.0f} GB",
+                    "vram_pct": vram_pct,
+                    "vram_txt": vram_txt,
                 }
                 self._js("aggiornaStatsSistema", stats)
-            except Exception as e:
-                print(f"Error monitor: {e}")
-            time.sleep(2)
 
-    def _monitor_calendario(self):
-        """Thread che attende il caricamento del calendario e lo invia alla UI."""
-        from logica_chat import eventi_precaricati
-        placeholder = "Non sono ancora stati caricati gli eventi di oggi."
-        
-        # Attendi finché il testo non cambia dal placeholder iniziale (max 30 sec)
-        tentativi = 0
-        while self._window is not None and tentativi < 15:
-            from logica_chat import eventi_precaricati as ev_actual
-            if ev_actual != placeholder and not ev_actual.startswith("Errore"):
-                self._js("aggiornaCalendario", ev_actual)
-                print("📅 Calendario precaricato inviato alla Dashboard.")
-                break
-            time.sleep(2)
-            tentativi += 1
+                # ── LED / Arduino — aggiorna solo se cambia ──────────
+                try:
+                    from actions.tools_arduino import get_stato_led, arduino as _arduino
+                    led_stato    = get_stato_led()
+                    arduino_conn = _arduino is not None and _arduino.is_open
+                    hw = {
+                        "led":     led_stato,
+                        "arduino": "CONN." if arduino_conn else "N/C",
+                    }
+                    if hw != _ultimo_led_stato:
+                        _ultimo_led_stato = hw
+                        self._js("aggiornaHardware", hw)
+                except Exception:
+                    pass
+
+            except Exception as e:
+                print(f"[MONITOR] Errore: {e}")
+            time.sleep(3)
 
     def _monitor_meteo(self):
         """Thread che aggiorna il meteo ogni ora."""
@@ -154,6 +200,7 @@ class IDISApi:
         tentativi_attesa = 0
         while self._window is not None:
             try:
+                # Usa la posizione rilevata (es: "Milan, Italy")
                 import actions.tools_location as tl
                 import urllib.parse
                 
@@ -249,10 +296,9 @@ def avvia_ui():
         dati = api.get_dati_dashboard()
         api._js("inizializzaDashboard", dati)
         api._set_stato_sfera("idle")
-        # Avvia monitoraggio sistema, meteo e calendario
+        # Avvia monitoraggio sistema e meteo
         threading.Thread(target=api._monitor_sistema, daemon=True).start()
         threading.Thread(target=api._monitor_meteo, daemon=True).start()
-        threading.Thread(target=api._monitor_calendario, daemon=True).start()
 
     window.events.loaded += on_loaded
 

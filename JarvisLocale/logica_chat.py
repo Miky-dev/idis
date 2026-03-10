@@ -143,6 +143,9 @@ def _warmup_ollama():
 
 def carica_calendario_background():
     global eventi_precaricati
+    from automations.profilo_uscita import controlla_calendario_uscita, esegui_profilo_uscita
+    if controlla_calendario_uscita(eventi_precaricati):
+        threading.Thread(target=esegui_profilo_uscita, args=("",), daemon=True).start()
     try:
         eventi_precaricati = ottieni_eventi_precaricati()
     except Exception as e:
@@ -152,6 +155,7 @@ def carica_calendario_background():
 def avvia_background():
     """Avvia tutti i thread di background nell'ordine corretto."""
     def _avvia_sequenza():
+        from automations.tools_mail import avvia_monitor
         # 1. Posizione (veloce, rete/GPS)
         ottieni_posizione.invoke({})
         
@@ -167,7 +171,20 @@ def avvia_background():
         # 5. Supervisore (leggero)
         supervisore_routine.inizializza({}, llm)
         supervisore_routine.avvia()
-        tools_tts.avvia_precaricamento()
+
+        from automations.profilo_uscita import inizializza as init_uscita
+        init_uscita(
+            llm         = llm,
+            ui_notify   = lambda m, t: _ui_callbacks_globali["aggiungi_messaggio"](m, t, "cyan") if _ui_callbacks_globali else None,
+            tts_parla   = tools_tts.parla,
+            js_callback = None  # opzionale, collegalo a ui_webview se vuoi aggiornare la dashboard
+        )
+        
+        # 6. Carica Kokoro TTS (bloccante per questo thread, ma già in background)
+        tools_tts._carica_kokoro()
+        
+        # 7. Avvia monitor mail (dopo che il TTS è pronto)
+        avvia_monitor()
 
     threading.Thread(target=_avvia_sequenza, daemon=True).start()
 
@@ -259,12 +276,17 @@ def _seleziona_tool(testo_lower: str) -> list:
 # ══════════════════════════════════════════════════════════════
 
 def elabora_risposta(testo_utente: str, ui_callbacks: dict):
-    import supervisore_routine
+    from automations.tools_mail import aggiorna_silenzio
+    aggiorna_silenzio()
+    import supervisore_routine 
     rileva_e_registra(testo_utente)
     supervisore_routine.aggiorna_ultimo_messaggio()
     if supervisore_routine.gestisci_conferma_learning(testo_utente.lower()): return
     if supervisore_routine.gestisci_conferma_mail(testo_utente.lower()): return
-    """
+    from automations.profilo_uscita import gestisci_messaggio as gestisci_uscita
+    gestisci_uscita(testo_utente)
+   
+    """ 
     Elabora il messaggio dell'utente: costruisce il prompt, chiama l'LLM con streaming,
     gestisce i tool calls. Comunica con la UI tramite i callback.
 
@@ -380,12 +402,9 @@ CALENDARIO: {eventi_precaricati[:500]}""" # tronca per evitare prompt troppo lun
             messaggio_corrente = None
             _primo_testo_ricevuto = False
 
-            #TEST con timer
             _t_stream = time.perf_counter()
-            _chunk_n = 0
-
-            # Avvia subito la pipeline TTS streaming
-            tools_tts.avvia_sessione_streaming()
+            _chunk_n  = 0
+            _tts_avviato = False   # avvio lazy: solo al primo chunk di testo reale
 
             for chunk in llm_attivo.stream(messaggi_lc):
                     if _chunk_n == 0:
@@ -395,12 +414,15 @@ CALENDARIO: {eventi_precaricati[:500]}""" # tronca per evitare prompt troppo lun
                     _chunk_n += 1
 
                     if chunk.content:
+                        # Avvia TTS solo al primo token di testo reale — salta i chunk vuoti del thinking
+                        if not _tts_avviato:
+                            tools_tts.avvia_sessione_streaming()
+                            _tts_avviato = True
                         if not _primo_testo_ricevuto:
                             set_stato("speaking")
                             imposta_animazione_pensiero(False)
                             _primo_testo_ricevuto = True
                         aggiorna(chunk.content)
-                        # ✅ Alimenta il TTS streaming frase per frase
                         tools_tts.alimenta_chunk(chunk.content)
 
                     if messaggio_corrente is None:
@@ -459,12 +481,9 @@ CALENDARIO: {eventi_precaricati[:500]}""" # tronca per evitare prompt troppo lun
         imposta_animazione_pensiero(False)
         cronologia_chat.append(AIMessage(content=testo_finale))
 
-        # ✅ Chiude lo stream TTS: manda il residuo e aspetta fine riproduzione
-        # Il thread torna idle solo quando Kokoro finisce davvero di parlare
-        def _finalizza_e_idle():
-            tools_tts.chiudi_sessione_streaming()
-            set_stato("idle")
-        threading.Thread(target=_finalizza_e_idle, daemon=True).start()
+        # Chiude lo stream TTS (non bloccante) e torna idle subito
+        tools_tts.chiudi_sessione_streaming()
+        set_stato("idle")
 
     except Exception as e:
         imposta_animazione_pensiero(False)

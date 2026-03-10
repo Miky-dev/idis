@@ -1075,7 +1075,7 @@
 
         <!-- COL SX -->
         <div class="col-left">
-            <div class="card" style="animation-delay:.05s">
+            <div class="card" style="animation-delay:.05s; cursor: pointer;" onclick="apriMeteo()">
                 <div class="c tl"></div>
                 <div class="c br"></div>
                 <div class="card-label">// meteo</div>
@@ -1267,29 +1267,33 @@
                     </div>
                 </div>
                 <div class="sys-row">
-                    <div class="sys-lbl"><span class="sys-name">RAM</span><span class="sys-val">11.2 / 32 GB</span>
+                    <div class="sys-lbl"><span class="sys-name">RAM</span><span class="sys-val" id="ramv">— / —
+                            GB</span>
                     </div>
                     <div class="sys-bar">
-                        <div class="sys-fill" style="width:35%;background:linear-gradient(90deg,#7b61ff,#3ecfff)"></div>
+                        <div class="sys-fill" id="ramb"
+                            style="width:0%;background:linear-gradient(90deg,#7b61ff,#3ecfff)"></div>
                     </div>
                 </div>
                 <div class="sys-row">
-                    <div class="sys-lbl"><span class="sys-name">VRAM</span><span class="sys-val">5.8 / 8 GB</span></div>
+                    <div class="sys-lbl"><span class="sys-name">VRAM</span><span class="sys-val" id="vramv">— / —
+                            GB</span></div>
                     <div class="sys-bar">
-                        <div class="sys-fill" style="width:72%;background:linear-gradient(90deg,#ffb347,#ff4f6a)"></div>
+                        <div class="sys-fill" id="vramb"
+                            style="width:0%;background:linear-gradient(90deg,#ffb347,#ff4f6a)"></div>
                     </div>
                 </div>
                 <div class="hw-row">
                     <div class="hw-name">💡 LED</div>
-                    <div class="hw-badge on">ACCESO</div>
+                    <div class="hw-badge off-b" id="ledBadge">SPENTO</div>
                 </div>
                 <div class="hw-row">
                     <div class="hw-name">🔌 Arduino</div>
-                    <div class="hw-badge on">CONN.</div>
+                    <div class="hw-badge off-b" id="arduinoBadge">N/C</div>
                 </div>
                 <div class="hw-row">
                     <div class="hw-name">🤖 Qwen3 8B</div>
-                    <div class="hw-badge on">IN VRAM</div>
+                    <div class="hw-badge on" id="modelBadge">IN VRAM</div>
                 </div>
             </div>
         </div>
@@ -1460,12 +1464,54 @@
         }
         function chip(t) { apriChat(); setTimeout(() => { document.getElementById('chatInp').value = t; }, 450); }
 
-        // CPU sim
-        setInterval(() => { const v = 18 + Math.random() * 38; document.getElementById('cpuv').textContent = Math.round(v) + '%'; document.getElementById('cpub').style.width = v + '%'; }, 3000);
+        // ── Rimosso simulatore CPU finto — dati reali da Python ──
 
-        // ══════════════════════════════════════════════════════════════
-        // BRIDGE PYTHON ↔ JS  (chiamate da ui_webview.py)
-        // ══════════════════════════════════════════════════════════════
+        function aggiornaStatsSistema(stats) {
+            // CPU
+            if (stats.cpu_pct !== undefined) {
+                document.getElementById('cpuv').textContent = Math.round(stats.cpu_pct) + '%';
+                document.getElementById('cpub').style.width = stats.cpu_pct + '%';
+                // Colore barra CPU: verde < 50%, giallo < 80%, rosso > 80%
+                const cc = stats.cpu_pct < 50 ? 'linear-gradient(90deg,#00ffa3,#3ecfff)'
+                    : stats.cpu_pct < 80 ? 'linear-gradient(90deg,#ffb347,#ff8c00)'
+                        : 'linear-gradient(90deg,#ff4f6a,#ff1744)';
+                document.getElementById('cpub').style.background = cc;
+            }
+            // RAM
+            if (stats.ram_pct !== undefined) {
+                document.getElementById('ramv').textContent = stats.ram_txt;
+                document.getElementById('ramb').style.width = stats.ram_pct + '%';
+            }
+            // VRAM
+            if (stats.vram_pct !== null && stats.vram_pct !== undefined) {
+                document.getElementById('vramv').textContent = stats.vram_txt;
+                document.getElementById('vramb').style.width = stats.vram_pct + '%';
+                // Colore VRAM: verde < 60%, arancio < 85%, rosso > 85%
+                const vc = stats.vram_pct < 60 ? 'linear-gradient(90deg,#7b61ff,#3ecfff)'
+                    : stats.vram_pct < 85 ? 'linear-gradient(90deg,#ffb347,#ff8c00)'
+                        : 'linear-gradient(90deg,#ff4f6a,#ff1744)';
+                document.getElementById('vramb').style.background = vc;
+            } else {
+                document.getElementById('vramv').textContent = 'N/D';
+            }
+        }
+
+        function aggiornaHardware(hw) {
+            // LED
+            if (hw.led !== undefined) {
+                const ledEl = document.getElementById('ledBadge');
+                const acceso = hw.led.toLowerCase().includes('acceso') || hw.led.toLowerCase() === 'on';
+                ledEl.textContent = acceso ? 'ACCESO' : 'SPENTO';
+                ledEl.className = 'hw-badge ' + (acceso ? 'on' : 'off-b');
+            }
+            // Arduino
+            if (hw.arduino !== undefined) {
+                const ardEl = document.getElementById('arduinoBadge');
+                const conn = hw.arduino === 'CONN.';
+                ardEl.textContent = hw.arduino;
+                ardEl.className = 'hw-badge ' + (conn ? 'on' : 'off-b');
+            }
+        }
 
         function aggiungiMessaggio(mittente, testo) {
             const msgs = document.getElementById('chatMsgs');
@@ -1579,19 +1625,6 @@
             }
         }
 
-        function aggiornaStatsSistema(stats) {
-            if (stats.cpu_pct !== undefined) {
-                document.getElementById('cpuv').textContent = Math.round(stats.cpu_pct) + '%';
-                document.getElementById('cpub').style.width = stats.cpu_pct + '%';
-            }
-            if (stats.ram_pct !== undefined) {
-                const ramValEl = document.querySelectorAll('.sys-val')[1]; // Il secondo .sys-val è la RAM
-                if (ramValEl) ramValEl.textContent = stats.ram_txt;
-                const ramBarEl = document.querySelectorAll('.sys-fill')[1];
-                if (ramBarEl) ramBarEl.style.width = stats.ram_pct + '%';
-            }
-        }
-
         function aggiornaMeteo(d) {
             if (!d) return;
             if (d.temp !== undefined) document.getElementById('meteoTemp').innerHTML = `${d.temp}<sup>°</sup>`;
@@ -1601,6 +1634,12 @@
             if (d.wind) document.getElementById('meteoWind').textContent = d.wind;
             if (d.feels) document.getElementById('meteoFeels').textContent = d.feels + '°';
             if (d.uv) document.getElementById('meteoUV').textContent = d.uv;
+        }
+
+        function apriMeteo() {
+            if (typeof window.pywebview !== 'undefined') {
+                window.pywebview.api.apri_meteo_browser();
+            }
         }
     </script>
 </body>

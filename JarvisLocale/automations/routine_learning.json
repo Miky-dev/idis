@@ -1,5 +1,45 @@
 {
-  "osservazioni": {},
-  "ultimo_messaggio": "2026-03-08T22:09:46.394419",
+  "osservazioni": {
+    "palestra": {
+      "lun": [
+        {
+          "ora": "17:30",
+          "fonte": "keyword",
+          "data": "2026-03-09"
+        }
+      ],
+      "mar": [
+        {
+          "ora": "21:50",
+          "fonte": "keyword",
+          "data": "2026-03-10"
+        }
+      ]
+    },
+    "studio": {
+      "mar": [
+        {
+          "ora": "17:26",
+          "fonte": "keyword",
+          "data": "2026-03-10"
+        }
+      ]
+    },
+    "uscita": {
+      "mar": [
+        {
+          "ora": "17:26",
+          "fonte": "gap+schermo",
+          "data": "2026-03-10"
+        },
+        {
+          "ora": "21:54",
+          "fonte": "keyword",
+          "data": "2026-03-10"
+        }
+      ]
+    }
+  },
+  "ultimo_messaggio": "2026-03-10T21:54:03.065562",
   "stabilizzazioni_notificate": []
 }

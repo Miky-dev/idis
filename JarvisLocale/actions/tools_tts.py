@@ -29,7 +29,9 @@ VELOCITA_DEFAULT = float(os.getenv("IDIS_VOICE_SPEED", "1.05"))
 LINGUA           = "it"
 
 # Punteggiatura che segnala la fine di una frase (flush al TTS)
-_SEPARATORI = re.compile(r'(?<=[.!?;])\s+|(?<=,)\s+(?=\S{4,})')
+# .!?: flush immediato | virgola dopo 20+ chars buffer → flush
+_SEPARATORI = re.compile(r'(?<=[.!?;:])\s+')
+_MIN_CHARS_VIRGOLA = 20   # flush su virgola solo se buffer >= N chars
 
 # ── Stato globale ────────────────────────────────────────────────────────────
 _kokoro: Kokoro | None = None
@@ -94,9 +96,11 @@ def _worker_sintesi():
 
     while True:
         try:
-            frase = _coda_frasi.get(timeout=5)
+            frase = _coda_frasi.get(timeout=1)
         except queue.Empty:
-            break
+            if _stop_event.is_set():
+                break
+            continue
 
         if frase is None:  # Segnale di fine
             _coda_audio.put(None)
@@ -133,9 +137,11 @@ def _worker_riproduzione():
     """Thread che prende audio da _coda_audio e lo riproduce sequenzialmente."""
     while True:
         try:
-            item = _coda_audio.get(timeout=10)
+            item = _coda_audio.get(timeout=1)
         except queue.Empty:
-            break
+            if _stop_event.is_set():
+                break
+            continue
 
         if item is None:  # Segnale di fine
             break
@@ -186,7 +192,7 @@ _buffer_lock  = threading.Lock()
 def alimenta_chunk(testo_parziale: str) -> None:
     """
     Ricevi un chunk di testo dall'LLM stream.
-    Quando il buffer contiene una frase completa, la manda al TTS.
+    Flush su: .!?;: | virgola dopo _MIN_CHARS_VIRGOLA chars | buffer >= 80 chars
     """
     global _buffer_chunk
 
@@ -196,22 +202,40 @@ def alimenta_chunk(testo_parziale: str) -> None:
     with _buffer_lock:
         _buffer_chunk += testo_parziale
 
-        # Cerca separatori di frase nel buffer
-        parti = re.split(r'(?<=[.!?;])\s+', _buffer_chunk)
-
+        # Flush su punteggiatura forte (.!?;:)
+        parti = re.split(r'(?<=[.!?;:])\s+', _buffer_chunk)
         if len(parti) > 1:
-            # Le prime N-1 parti sono frasi complete; l'ultima è ancora in costruzione
             for frase_completa in parti[:-1]:
                 frase_completa = frase_completa.strip()
                 if frase_completa:
                     _coda_frasi.put(frase_completa)
             _buffer_chunk = parti[-1]
+            return
+
+        # Flush su virgola se buffer abbastanza lungo
+        if ',' in _buffer_chunk and len(_buffer_chunk) >= _MIN_CHARS_VIRGOLA:
+            idx = _buffer_chunk.rfind(',')
+            frase = _buffer_chunk[:idx].strip()
+            if frase:
+                _coda_frasi.put(frase)
+            _buffer_chunk = _buffer_chunk[idx+1:].lstrip()
+            return
+
+        # Flush forzato se buffer troppo lungo (evita attese su frasi senza punteggiatura)
+        if len(_buffer_chunk) >= 80:
+            # Trova l'ultimo spazio per non spezzare le parole
+            idx = _buffer_chunk.rfind(' ', 0, 80)
+            if idx > 20:
+                frase = _buffer_chunk[:idx].strip()
+                _coda_frasi.put(frase)
+                _buffer_chunk = _buffer_chunk[idx:].lstrip()
 
 
 def chiudi_sessione_streaming() -> None:
     """
     Segnala che il testo è terminato.
-    Manda il residuo nel buffer al TTS e aspetta che la riproduzione finisca.
+    Manda il residuo nel buffer e chiude la pipeline.
+    NON bloccante — i worker finiscono in background senza bloccare la UI.
     """
     global _buffer_chunk
 
@@ -221,14 +245,9 @@ def chiudi_sessione_streaming() -> None:
         if residuo:
             _coda_frasi.put(residuo)
 
-    # Segnale di fine alla pipeline
+    # Segnale di fine — i worker si fermano da soli quando la coda si svuota
     _coda_frasi.put(None)
-
-    # Aspetta che entrambi i worker finiscano
-    if _thread_sintesi:
-        _thread_sintesi.join(timeout=30)
-    if _thread_riproduzione:
-        _thread_riproduzione.join(timeout=30)
+    # Niente join() — la UI torna subito disponibile mentre l'audio finisce in background
 
 
 def parla(testo: str, bloccante: bool = False) -> None:

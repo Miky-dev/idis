@@ -23,11 +23,11 @@ def ottieni_servizio_calendario():
         return _servizio_cache
 
     creds = None
-    token_path = os.path.join('..', 'token.json')
+    token_path = os.path.join('..', 'token_calendar.json')
     creds_path = os.path.join('..', 'credentials.json')
 
-    if os.path.exists('token.json'):
-        token_path = 'token.json'
+    if os.path.exists('token_calendar.json'):
+        token_path = 'token_calendar.json'
     if os.path.exists('credentials.json'):
         creds_path = 'credentials.json'
 
