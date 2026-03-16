@@ -170,8 +170,16 @@ def fetch_mail_recenti(max_mail: int = 20) -> list[dict]:
 
         mail_list  = []
         spam_count = 0
+        gia_viste_count = 0
 
         for i, msg in enumerate(messaggi):
+            if msg['id'] in _ids_visti:
+                gia_viste_count += 1
+                continue
+
+            # Segniamo subito la mail come vista in memoria così il prossimo run la ignorerà.
+            _ids_visti.add(msg['id'])
+            
             t_msg = time.time()
 
             # Step 3a: fetch solo headers (leggero)
@@ -217,13 +225,15 @@ def fetch_mail_recenti(max_mail: int = 20) -> list[dict]:
             })
             _t(f"  [{i+1}] TOTALE messaggio", t_msg)
 
-        print(f"[MAIL-TIMER] Filtro: {spam_count} spam scartate, {len(mail_list)} da analizzare.")
+        print(f"[MAIL-TIMER] Filtro: {gia_viste_count} viste, {spam_count} spam scartate, {len(mail_list)} da analizzare.")
         _t("══ fetch_mail_recenti TOTALE", t_totale)
         return mail_list
 
     except Exception as e:
         print(f"[MAIL] Errore fetch: {e}")
         return []
+    finally:
+        _salva_ids_visti(_ids_visti)
 
 
 # ══════════════════════════════════════════════════════════════

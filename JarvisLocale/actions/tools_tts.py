@@ -13,6 +13,7 @@ import threading
 import queue
 import re
 import os
+import esp32_bridge
 
 import sounddevice as sd
 import numpy as np
@@ -44,6 +45,7 @@ _coda_audio: queue.Queue = queue.Queue(maxsize=4)
 
 _thread_sintesi:       threading.Thread | None = None
 _thread_riproduzione:  threading.Thread | None = None
+_session_id:           int = 0
 
 
 # ── Init modello ─────────────────────────────────────────────────────────────
@@ -88,22 +90,23 @@ def _pulisci(testo: str) -> str:
 
 # ── Worker sintesi: prende frasi dalla coda, genera audio ───────────────────
 
-def _worker_sintesi():
+def _worker_sintesi(session_id: int):
     """Thread che prende frasi da _coda_frasi e genera audio in _coda_audio."""
     kokoro = _get_kokoro()
     if kokoro is None:
         return
 
-    while True:
+    while session_id == _session_id:
         try:
             frase = _coda_frasi.get(timeout=1)
         except queue.Empty:
-            if _stop_event.is_set():
+            if _stop_event.is_set() or session_id != _session_id:
                 break
             continue
 
-        if frase is None:  # Segnale di fine
-            _coda_audio.put(None)
+        if frase is None or session_id != _session_id:  # Segnale di fine
+            if session_id == _session_id:
+                _coda_audio.put(None)
             break
 
         if _stop_event.is_set():
@@ -111,7 +114,8 @@ def _worker_sintesi():
             while not _coda_frasi.empty():
                 try: _coda_frasi.get_nowait()
                 except: pass
-            _coda_audio.put(None)
+            if session_id == _session_id:
+                _coda_audio.put(None)
             break
 
         frase = _pulisci(frase)
@@ -133,28 +137,32 @@ def _worker_sintesi():
 
 # ── Worker riproduzione: prende audio dalla coda e lo suona ─────────────────
 
-def _worker_riproduzione():
+def _worker_riproduzione(session_id: int):
     """Thread che prende audio da _coda_audio e lo riproduce sequenzialmente."""
-    while True:
+    while session_id == _session_id:
         try:
             item = _coda_audio.get(timeout=1)
         except queue.Empty:
-            if _stop_event.is_set():
+            if _stop_event.is_set() or session_id != _session_id:
                 break
             continue
 
-        if item is None:  # Segnale di fine
+        if item is None or session_id != _session_id:  # Segnale di fine
+            esp32_bridge.set_ai_state("idle")
             break
 
         if _stop_event.is_set():
+            esp32_bridge.set_ai_state("idle")
             break
 
         samples, rate = item
         try:
+            esp32_bridge.set_ai_state("speaking")
             sd.play(samples, rate)
             sd.wait()
         except Exception as e:
             print(f"[TTS] Errore riproduzione: {e}")
+            esp32_bridge.set_ai_state("idle")
 
 
 # ── API pubblica ─────────────────────────────────────────────────────────────
@@ -164,11 +172,13 @@ def avvia_sessione_streaming() -> None:
     Avvia la pipeline TTS streaming.
     Chiama questa funzione PRIMA di iniziare a passare chunk con `alimenta_chunk()`.
     """
-    global _thread_sintesi, _thread_riproduzione
+    global _thread_sintesi, _thread_riproduzione, _session_id
 
     ferma()  # Ferma eventuali sessioni precedenti
 
     _stop_event.clear()
+    _session_id += 1
+    current_session = _session_id
 
     # Svuota le code
     while not _coda_frasi.empty():
@@ -178,8 +188,8 @@ def avvia_sessione_streaming() -> None:
         try: _coda_audio.get_nowait()
         except: pass
 
-    _thread_sintesi      = threading.Thread(target=_worker_sintesi, daemon=True, name="TTS-Sintesi")
-    _thread_riproduzione = threading.Thread(target=_worker_riproduzione, daemon=True, name="TTS-Play")
+    _thread_sintesi      = threading.Thread(target=_worker_sintesi, args=(current_session,), daemon=True, name="TTS-Sintesi")
+    _thread_riproduzione = threading.Thread(target=_worker_riproduzione, args=(current_session,), daemon=True, name="TTS-Play")
     _thread_sintesi.start()
     _thread_riproduzione.start()
 
@@ -270,10 +280,13 @@ def parla(testo: str, bloccante: bool = False) -> None:
             samples, rate = kokoro.create(testo_pulito, voice=VOCE_DEFAULT,
                                            speed=VELOCITA_DEFAULT, lang=LINGUA)
             if not _stop_event.is_set():
+                esp32_bridge.set_ai_state("speaking")
                 sd.play(samples, rate)
                 sd.wait()
+                esp32_bridge.set_ai_state("idle")
         except Exception as e:
             print(f"[TTS] Errore: {e}")
+            esp32_bridge.set_ai_state("idle")
 
     if bloccante:
         _play()
@@ -288,6 +301,7 @@ def ferma() -> None:
     _buffer_chunk = ""
     try:
         sd.stop()
+        esp32_bridge.set_ai_state("idle")
     except Exception:
         pass
 

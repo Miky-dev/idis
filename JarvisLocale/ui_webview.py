@@ -21,6 +21,7 @@ import psutil
 from actions.tools_arduino import get_stato_led
 from tools_memory import leggi_memoria
 from tools_routine import ottieni_sveglie_attive
+import esp32_bridge
 
 
 # ══════════════════════════════════════════════════════════════
@@ -60,6 +61,7 @@ class IDISApi:
             "aggiorna_testo":     lambda txt: self._js("aggiornaUltimoMessaggio", txt),
             "reset_label":        lambda: self._js("resetLabel"),
             "set_stato":          lambda s: self._set_stato_sfera(s),
+            "_js_callback":       self._js,
         }
 
         threading.Thread(
@@ -122,6 +124,11 @@ class IDISApi:
         """Aggiorna lo stato della sfera plasma nella UI."""
         self._stato_sfera = stato
         self._js("setStatoSfera", stato)
+        # L'aggiornamento dell'ESP32 per gli stati 'speaking' e 'idle' è ora gestito dal modulo TTS
+        # per allinearsi precisamente con la durata dell'audio, perciò non invochiamo esp32_bridge qui
+        # per non accavallare i comandi temporali. Solo thinking viene gestito qui tramite eccezione dal main.
+        if stato in ["sleep", "thinking"]:
+            esp32_bridge.set_ai_state(stato)
 
     def get_stato_sfera(self) -> str:
         return self._stato_sfera
@@ -237,7 +244,8 @@ class IDISApi:
                     "hum": curr['humidity'] + "%",
                     "wind": curr['windspeedKmph'] + " km/h",
                     "feels": curr['FeelsLikeC'],
-                    "uv": curr['uvIndex']
+                    "uv": curr['uvIndex'],
+                    "city": city
                 }
                 self._js("aggiornaMeteo", data)
                 print(f"☁️ Meteo aggiornato per {city or 'tua posizione'}: {data['temp']}°C, {data['desc']}")
@@ -249,6 +257,22 @@ class IDISApi:
             
             # Aspetta 1 ora (3600 secondi)
             time.sleep(3600)
+
+    def _monitor_calendario(self):
+        """Thread che aggiorna il calendario nella UI quando cambia in background."""
+        import time
+        _ultimo_ev = None
+        while self._window is not None:
+            try:
+                from logica_chat import eventi_precaricati as ev
+                if ev != _ultimo_ev and "Non sono ancora" not in ev and "Caricamento" not in ev:
+                    self._js("aggiornaCalendario", ev)
+                    print("📅 Calendario precaricato inviato alla Dashboard.")
+                    _ultimo_ev = ev
+            except Exception as e:
+                pass
+            time.sleep(2)
+
 
     # ── Helper JS ─────────────────────────────────────────────
 
@@ -270,6 +294,7 @@ class IDISApi:
 def avvia_ui():
     """Crea e avvia la finestra PyWebView. Bloccante — va chiamata dal main thread."""
 
+    esp32_bridge.inizializza()
     api = IDISApi()
 
     # Percorso assoluto all'HTML della dashboard
@@ -299,8 +324,18 @@ def avvia_ui():
         # Avvia monitoraggio sistema e meteo
         threading.Thread(target=api._monitor_sistema, daemon=True).start()
         threading.Thread(target=api._monitor_meteo, daemon=True).start()
+        threading.Thread(target=api._monitor_calendario, daemon=True).start()
 
     window.events.loaded += on_loaded
+    
+    def on_closing():
+        print("[IDIS] Chiusura applicazione... Mando in sleep l'ESP32.")
+        esp32_bridge.set_ai_state("sleep")
+        import time
+        time.sleep(0.5) # Diamo il tempo alla seriale di inviare il comando
+        esp32_bridge.ferma()
+        
+    window.events.closing += on_closing
 
     # Avvia PyWebView (bloccante)
     webview.start(debug=False)

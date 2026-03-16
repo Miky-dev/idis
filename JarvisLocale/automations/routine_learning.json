@@ -14,6 +14,13 @@
           "fonte": "keyword",
           "data": "2026-03-10"
         }
+      ],
+      "gio": [
+        {
+          "ora": "17:27",
+          "fonte": "gap+schermo",
+          "data": "2026-03-12"
+        }
       ]
     },
     "studio": {
@@ -33,13 +40,43 @@
           "data": "2026-03-10"
         },
         {
-          "ora": "21:54",
+          "ora": "22:33",
           "fonte": "keyword",
           "data": "2026-03-10"
+        }
+      ],
+      "gio": [
+        {
+          "ora": "16:51",
+          "fonte": "keyword",
+          "data": "2026-03-12"
+        },
+        {
+          "ora": "15:06",
+          "fonte": "gap+calendario+schermo",
+          "data": "2026-03-12"
+        }
+      ]
+    },
+    "rientro": {
+      "gio": [
+        {
+          "ora": "16:44",
+          "fonte": "keyword",
+          "data": "2026-03-12"
+        }
+      ]
+    },
+    "pranzo": {
+      "gio": [
+        {
+          "ora": "12:22",
+          "fonte": "gap+schermo",
+          "data": "2026-03-12"
         }
       ]
     }
   },
-  "ultimo_messaggio": "2026-03-10T21:54:03.065562",
+  "ultimo_messaggio": "2026-03-12T19:00:48.147445",
   "stabilizzazioni_notificate": []
 }

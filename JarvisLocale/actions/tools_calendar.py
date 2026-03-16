@@ -271,7 +271,9 @@ def ottieni_eventi_precaricati() -> str:
         fine_dt = inizio_dt + datetime.timedelta(days=giorni_a_domenica_prossima)
         fine_dt = fine_dt.replace(hour=23, minute=59, second=59)
         
-        time_min = inizio_dt.isoformat() + 'Z'
+        # Filtra gli eventi che sono terminati da più di 1 ora
+        limite_passato = adesso_utc - datetime.timedelta(hours=1)
+        time_min = limite_passato.isoformat() + 'Z'
         time_max = fine_dt.isoformat() + 'Z'
         
         events_result = service.events().list(calendarId='primary', timeMin=time_min,

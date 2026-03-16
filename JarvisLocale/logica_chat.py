@@ -32,7 +32,9 @@ from tools_memory import leggi_memoria, ricorda_informazione
 from actions.tools_vision import esegui_visione
 from actions.tools_location import ottieni_posizione, posizione_cache
 from actions import tools_tts
+from actions import tools_sounds
 from actions.tools_handmouse import attiva_controllo_mano, disattiva_controllo_mano
+import esp32_bridge
 from automations.tools_mail import leggi_mail_importanti 
 
 
@@ -155,7 +157,6 @@ def carica_calendario_background():
 def avvia_background():
     """Avvia tutti i thread di background nell'ordine corretto."""
     def _avvia_sequenza():
-        from automations.tools_mail import avvia_monitor
         # 1. Posizione (veloce, rete/GPS)
         ottieni_posizione.invoke({})
         
@@ -169,7 +170,7 @@ def avvia_background():
             pre_cache_bindings()
             
         # 5. Supervisore (leggero)
-        supervisore_routine.inizializza({}, llm)
+        supervisore_routine.inizializza({}, llm, js_callback=lambda f, *a: _ui_callbacks_globali.get("_js_callback")(f, *a) if _ui_callbacks_globali and "_js_callback" in _ui_callbacks_globali else None)
         supervisore_routine.avvia()
 
         from automations.profilo_uscita import inizializza as init_uscita
@@ -182,9 +183,14 @@ def avvia_background():
         
         # 6. Carica Kokoro TTS (bloccante per questo thread, ma già in background)
         tools_tts._carica_kokoro()
+        tools_sounds.avvia_precaricamento()
         
-        # 7. Avvia monitor mail (dopo che il TTS è pronto)
-        avvia_monitor()
+        # 7. (Mail monitor è ora gestito dall'inattività nel supervisore)
+        from iphone_bridge import avvia_server as avvia_iphone
+        avvia_iphone()
+
+        # 8. Boot completato — porta l'ESP32 in modalità IDLE (ascolto)
+        esp32_bridge.set_ai_state("idle")
 
     threading.Thread(target=_avvia_sequenza, daemon=True).start()
 
@@ -255,6 +261,13 @@ def _seleziona_tool(testo_lower: str) -> list:
                                        "cerca in google", "cerca su youtube", "metti nella barra"]):
         tutti_i_tool.append(digita_nel_browser)
 
+    if any(k in testo_lower for k in ["mail", "email", "posta", "inbox", "messaggi email"]):
+        tutti_i_tool.append(leggi_mail_importanti)
+
+    if any(k in testo_lower for k in ["routine", "profilo", "cosa faccio di solito", "abitudini", "hai imparato"]):
+        if mostra_profilo_routine not in tutti_i_tool:
+            tutti_i_tool.append(mostra_profilo_routine)
+
     if any(k in testo_lower for k in ["controllo mano", "controllo remoto", "hand mouse", "handmouse",
                                        "attiva controllo remoto", "disattiva controllo remoto", "mouse con la mano",
                                        "usa la mano", "gesti mano", "attiva mano", "disattiva mano", "dammi poteri", "poteri", "togli poteri"]):
@@ -276,17 +289,7 @@ def _seleziona_tool(testo_lower: str) -> list:
 # ══════════════════════════════════════════════════════════════
 
 def elabora_risposta(testo_utente: str, ui_callbacks: dict):
-    from automations.tools_mail import aggiorna_silenzio
-    aggiorna_silenzio()
-    import supervisore_routine 
-    rileva_e_registra(testo_utente)
-    supervisore_routine.aggiorna_ultimo_messaggio()
-    if supervisore_routine.gestisci_conferma_learning(testo_utente.lower()): return
-    if supervisore_routine.gestisci_conferma_mail(testo_utente.lower()): return
-    from automations.profilo_uscita import gestisci_messaggio as gestisci_uscita
-    gestisci_uscita(testo_utente)
-   
-    """ 
+    """
     Elabora il messaggio dell'utente: costruisce il prompt, chiama l'LLM con streaming,
     gestisce i tool calls. Comunica con la UI tramite i callback.
 
@@ -297,6 +300,19 @@ def elabora_risposta(testo_utente: str, ui_callbacks: dict):
         - set_stato(stato)   — "idle", "thinking", "speaking"
     """
     global cronologia_chat
+
+    # ── Aggiornamenti background (pre-LLM, zero latenza) ─────
+    from automations.tools_mail import aggiorna_silenzio
+    aggiorna_silenzio()
+    import supervisore_routine
+    rileva_e_registra(testo_utente)
+    supervisore_routine.aggiorna_ultimo_messaggio()
+
+    # ── Intercetta conferme pendenti (learning, mail, uscita) ─
+    if supervisore_routine.gestisci_conferma_learning(testo_utente.lower()): return
+    if supervisore_routine.gestisci_conferma_mail(testo_utente.lower()): return
+    from automations.profilo_uscita import gestisci_messaggio as gestisci_uscita
+    gestisci_uscita(testo_utente)
 
     # ✅ Interrompi subito la voce se IDIS stava parlando
     tools_tts.ferma()
@@ -309,7 +325,7 @@ def elabora_risposta(testo_utente: str, ui_callbacks: dict):
     # Passa i callbacks al supervisore la prima volta
     if _ui_callbacks_globali is None:
         _ui_callbacks_globali = ui_callbacks
-        supervisore_routine.inizializza(ui_callbacks, llm)
+        supervisore_routine.inizializza(ui_callbacks, llm, js_callback=ui_callbacks.get("_js_callback"))
 
     if testo_utente.strip().lower() in ["/reset", "cancella chat", "dimentica tutto"]:
         cronologia_chat = []
@@ -342,6 +358,7 @@ def elabora_risposta(testo_utente: str, ui_callbacks: dict):
 
     set_stato("thinking")
     imposta_animazione_pensiero(True)
+    tools_sounds.thinking()
 
     # ✅ [OPT] Contesto dinamico (ora, posizione, stato) messo in un messaggio a parte.
     # Usiamo solo HH:MM per non invalidare la cache ogni secondo.
@@ -421,6 +438,7 @@ CALENDARIO: {eventi_precaricati[:500]}""" # tronca per evitare prompt troppo lun
                         if not _primo_testo_ricevuto:
                             set_stato("speaking")
                             imposta_animazione_pensiero(False)
+                            tools_sounds.speaking()
                             _primo_testo_ricevuto = True
                         aggiorna(chunk.content)
                         tools_tts.alimenta_chunk(chunk.content)
@@ -483,10 +501,12 @@ CALENDARIO: {eventi_precaricati[:500]}""" # tronca per evitare prompt troppo lun
 
         # Chiude lo stream TTS (non bloccante) e torna idle subito
         tools_tts.chiudi_sessione_streaming()
+        tools_sounds.idle()
         set_stato("idle")
 
     except Exception as e:
         imposta_animazione_pensiero(False)
+        tools_sounds.error()
         set_stato("idle")
         aggiungi("Errore", f"Errore: {str(e)}", "red")
 

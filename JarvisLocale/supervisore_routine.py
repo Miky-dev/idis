@@ -44,8 +44,8 @@ _llm           = None
 _routine_cache       = None
 _routine_cache_mtime = 0.0
 
-# Stato mail
-_ultimo_messaggio_utente = 0.0
+# Stato mail / Inattività
+_ultimo_messaggio_utente = time.time()
 _avvio_app               = time.time()
 _ultimo_check_mail       = 0.0
 _mail_in_attesa_conferma  = []
@@ -63,11 +63,12 @@ LLM_TIMEOUT     = 15     # secondi max per risposta LLM consiglio evento
 # API PUBBLICA
 # ══════════════════════════════════════════════════════════════
 
-def inizializza(ui_callbacks: dict, llm):
+def inizializza(ui_callbacks: dict, llm, js_callback=None):
     """Chiamato da logica_chat.avvia_background()."""
-    global _ui_callbacks, _llm
+    global _ui_callbacks, _llm, _js_callback
     _ui_callbacks = ui_callbacks
     _llm          = llm
+    _js_callback  = js_callback
 
 
 def aggiorna_ultimo_messaggio():
@@ -232,39 +233,102 @@ def _genera_consiglio_llm(titolo_evento: str) -> str:
 
 
 def _controlla_calendario():
-    """Avviso 15 min prima di un evento. Usa UTC corretto per Google API."""
+    """Avviso 15 min prima di un evento e 30 min prima se richiede uscita. Usa UTC corretto per Google API."""
     try:
         from actions.tools_calendar import ottieni_servizio_calendario
+        from automations.profilo_uscita import _KW_EVENTI_USCITA, _parla
+        import urllib.parse
+        import requests
 
-        # Google Calendar API vuole UTC — usiamo utcnow() non now()
         adesso_utc = datetime.datetime.utcnow()
+        
+        # Finestra 15 minuti standard
         tra_14     = adesso_utc + datetime.timedelta(minutes=14)
         tra_16     = adesso_utc + datetime.timedelta(minutes=16)
 
+        # Finestra 30 minuti (pre-uscita abbigliamento)
+        tra_29     = adesso_utc + datetime.timedelta(minutes=29)
+        tra_31     = adesso_utc + datetime.timedelta(minutes=31)
+
         service = ottieni_servizio_calendario()
+        
+        # Controlliamo eventi tra 14 e 31 minuti da ora per prendere entrambe le finestre
         result  = service.events().list(
             calendarId   = "primary",
             timeMin      = tra_14.isoformat() + "Z",
-            timeMax      = tra_16.isoformat() + "Z",
+            timeMax      = tra_31.isoformat() + "Z",
             singleEvents = True,
             orderBy      = "startTime"
         ).execute()
 
         for event in result.get("items", []):
             titolo = event.get("summary", "Evento senza titolo")
-            if titolo in _eventi_gia_notificati:
-                continue
-            _eventi_gia_notificati.add(titolo)
+            inizio_str = event.get("start", {}).get("dateTime")
+            if not inizio_str:
+                 continue
+                 
+            # Calcolo esatto minuti mancanti
+            inizio_dt = datetime.datetime.fromisoformat(inizio_str.replace('Z', '+00:00'))
+            minuti_mancanti = int((inizio_dt - datetime.datetime.now(datetime.timezone.utc)).total_seconds() / 60)
 
-            def _invia(t=titolo):
-                consiglio = _genera_consiglio_llm(t)
-                msg = f"Tra 15 minuti: {t}."
-                if consiglio:
-                    msg += f"\n{consiglio}"
-                _notifica(msg)
-                _log("CALENDARIO", f"Avviso: {t}")
+            # --- AVVISO 15 MINUTI STANDARD ---
+            if 14 <= minuti_mancanti <= 16:
+                if titolo not in _eventi_gia_notificati:
+                    _eventi_gia_notificati.add(titolo)
+                    def _invia(t=titolo):
+                        consiglio = _genera_consiglio_llm(t)
+                        msg = f"Tra 15 minuti: {t}."
+                        if consiglio:
+                            msg += f"\n{consiglio}"
+                        _notifica(msg)
+                        _log("CALENDARIO", f"Avviso 15m: {t}")
+                    threading.Thread(target=_invia, daemon=True).start()
 
-            threading.Thread(target=_invia, daemon=True).start()
+            # --- AVVISO 30 MINUTI PRE-USCITA (METEO & ABBIGLIAMENTO) ---
+            elif 29 <= minuti_mancanti <= 31:
+                chiave_30 = f"{titolo}_30m"
+                if chiave_30 not in _eventi_gia_notificati:
+                    _eventi_gia_notificati.add(chiave_30)
+                    
+                    # Controlla se è un evento che richiede l'uscita
+                    t_lower = titolo.lower()
+                    if any(k in t_lower for k in _KW_EVENTI_USCITA):
+                        def _invia_30m(t=titolo):
+                            _log("CALENDARIO", f"Avviso 30m uscita rilevato: {t}")
+                            try:
+                                import actions.tools_location as tl
+                                city = tl.posizione_cache.split(',')[0].strip() if "," in tl.posizione_cache else tl.posizione_cache.strip()
+                                city_param = urllib.parse.quote(city) if city and "Sconosciuta" not in city else ""
+                                res = requests.get(f"http://wttr.in/{city_param}?format=j1", timeout=5).json()
+                                curr = res['current_condition'][0]
+                                desc = curr['lang_it'][0]['value'] if 'lang_it' in curr else curr['weatherDesc'][0]['value']
+                                temp = curr['temp_C']
+                                meteo_str = f"{temp}°C e {desc}"
+                                
+                                prompt = (
+                                    f"Tra mezz'ora l'utente stringerà un impegno chiamato '{t}'. "
+                                    f"Fuori ci sono {meteo_str}. "
+                                    "Formula una sola frase di avviso cordiale. Digli che è ora di prepararsi, riassumi il meteo e "*
+                                    "suggerisci cosa indossare in base alla temperatura."
+                                )
+                                from langchain_core.messages import SystemMessage, HumanMessage
+                                msg_vocale = f"Tra mezz'ora hai l'impegno: {t}. Fuori ci sono {meteo_str}."
+                                
+                                if _llm:
+                                    risposta = _llm.invoke([
+                                        SystemMessage(content="/no_think\nSei IDIS. Rispondi con UNA frase in italiano naturale e parlata. Niente emoji, asterischi o formattazioni. Parla all'utente."),
+                                        HumanMessage(content=prompt)
+                                    ])
+                                    if risposta and risposta.content:
+                                        testo = risposta.content
+                                        msg_vocale = "".join(p.get("text","") if isinstance(p,dict) else str(p) for p in testo) if isinstance(testo, list) else str(testo)
+                                        
+                                _notifica(f"👔 Suggerimento pre-uscita per: {t}")
+                                _parla(msg_vocale)
+                            except Exception as e:
+                                _log("CALENDARIO", f"Errore 30m: {e}")
+                                
+                        threading.Thread(target=_invia_30m, daemon=True).start()
 
     except Exception as e:
         _log("CALENDARIO", f"Errore: {e}")
@@ -326,6 +390,22 @@ def _controlla_mail():
                     for e in eventi_con_data
                 )
                 msg += f"\n\nVuoi che aggiunga al calendario: {titoli}? Rispondi sì o no."
+
+            # Update dashboard via JS
+            if _js_callback:
+                payload = [
+                    {
+                        "emoji":    m.get("emoji","📧"),
+                        "oggetto":  m.get("oggetto",""),
+                        "riassunto": m.get("riassunto",""),
+                        "isNew":    True
+                    }
+                    for m in classificate
+                ]
+                try:
+                    _js_callback("aggiornaMail", payload)
+                except Exception as e:
+                    _log("MAIL", f"Errore JS callback info mail: {e}")
 
             _notifica(msg)
             segna_come_lette([m["mail_id"] for m in classificate])
@@ -430,6 +510,10 @@ def _loop():
 
         try:    _controlla_mail()
         except Exception as e: _log("LOOP", f"Eccezione mail: {e}")
+
+        # Se l'utente è inattivo da 5 min, possiamo loggarlo ma non forziamo l'uscita
+        if (time.time() - _ultimo_messaggio_utente) > 300:
+            _log("LOOP", "Inattività > 5 min. Il sistema rimane in idle (check background attivi).")
 
         try:    _controlla_learning()
         except Exception as e: _log("LOOP", f"Eccezione learning: {e}")

@@ -66,6 +66,8 @@ _stato = {
     "mail_ids_pre":     set(),       # ID mail al momento dell'uscita (per diff al rientro)
     "spotify_era_attivo": False,     # True se Spotify suonava prima dell'uscita
     "led_era_acceso":   False,       # True se LED era acceso prima dell'uscita
+    "timer_avvio_uscita": None,      # Timer per ritardare l'avvio del profilo uscita
+    "testo_uscita_pendente": None,   # Variabile d'appoggio per rilanciare il timer con l'ultimo intent
 }
 
 # Referenze iniettate da logica_chat
@@ -201,14 +203,19 @@ def _uscita_step_briefing():
         # 1. Meteo
         try:
             t1 = time.time()
-            from actions.weather_report import mostra_meteo
-            meteo = mostra_meteo.invoke({})
-            if meteo and "Errore" not in meteo:
-                prima_riga = meteo.split("\n")[0].strip()
-                parti.append(prima_riga)
-                _log("BRIEFING", f"Meteo: '{prima_riga}'", t1)
-            else:
-                _log("BRIEFING", "Meteo: nessun dato.")
+            import actions.tools_location as tl
+            import requests
+            import urllib.parse
+            city = tl.posizione_cache.split(',')[0].strip() if "," in tl.posizione_cache else tl.posizione_cache.strip()
+            city_param = urllib.parse.quote(city) if city and "Sconosciuta" not in city else ""
+            res = requests.get(f"http://wttr.in/{city_param}?format=j1", timeout=5).json()
+            curr = res['current_condition'][0]
+            desc = curr['lang_it'][0]['value'] if 'lang_it' in curr else curr['weatherDesc'][0]['value']
+            temp = curr['temp_C']
+            luogo = city if city and "Sconosciuta" not in city else "qui"
+            meteo_str = f"Meteo {luogo}: {temp}°C, {desc}"
+            parti.append(meteo_str)
+            _log("BRIEFING", meteo_str, t1)
         except Exception as e:
             _log("ERR", f"Meteo: {e}")
 
@@ -217,17 +224,20 @@ def _uscita_step_briefing():
             t1 = time.time()
             from actions.tools_calendar import leggi_calendario
             eventi = leggi_calendario.invoke({})
-            _NESSUN_EVENTO = ["nessun evento", "no event", "non ci sono eventi",
-                              "nessun appuntamento", "non ho trovato", "periodo richiesto"]
-            ha_eventi = eventi and not any(k in eventi.lower() for k in _NESSUN_EVENTO)
-            if ha_eventi:
-                righe = [r.strip() for r in eventi.split("\n")
-                         if r.strip() and not r.strip().startswith("Oggi") and len(r.strip()) > 5]
-                if righe:
-                    parti.append(f"Hai in agenda: {righe[0]}")
-                    _log("BRIEFING", f"Calendario: '{righe[0]}'", t1)
+            if "Errore" in eventi:
+                _log("BRIEFING", f"Calendario in errore: {eventi.strip()}", t1)
             else:
-                _log("BRIEFING", "Calendario: giornata libera.", t1)
+                _NESSUN_EVENTO = ["nessun evento", "no event", "non ci sono eventi",
+                                  "nessun appuntamento", "non ho trovato", "periodo richiesto"]
+                ha_eventi = eventi and not any(k in eventi.lower() for k in _NESSUN_EVENTO)
+                if ha_eventi:
+                    righe = [r.strip() for r in eventi.split("\n")
+                             if r.strip() and not r.strip().startswith("Oggi") and len(r.strip()) > 5]
+                    if righe:
+                        parti.append(f"Hai in agenda: {righe[0]}")
+                        _log("BRIEFING", f"Calendario: '{righe[0]}'", t1)
+                else:
+                    _log("BRIEFING", "Calendario: giornata libera.", t1)
         except Exception as e:
             _log("ERR", f"Calendario: {e}")
 
@@ -243,7 +253,7 @@ def _uscita_step_briefing():
 
         _log("BRIEFING", f"→ '{briefing}'")
         _parla(briefing)
-        _notifica("🚪 USCITA", briefing)
+        _notifica("🤖 IDIS — 🚪 USCITA", briefing)
         _log("BRIEFING", "Completato.", t0)
 
     except Exception as e:
@@ -312,7 +322,7 @@ def _timer_rientro_scaduto():
         return
     _log("TIMER", "Timer rientro scaduto — invio promemoria.")
     _parla("Sei rientrato? Quando sei pronto, dimmi che sei a casa.")
-    _notifica("⏰ TIMER RIENTRO", "È l'ora del rientro prevista. Di' 'sono tornato' quando sei a casa.")
+    _notifica("🤖 IDIS — ⏰ TIMER RIENTRO", "È l'ora del rientro prevista. Di' 'sono tornato' quando sei a casa.")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -354,13 +364,24 @@ def esegui_profilo_rientro():
 def _rientro_step_benvenuto(durata_str: str):
     t1 = time.time()
     try:
-        if durata_str:
-            msg = f"Bentornato! Sei stato fuori {durata_str}."
-        else:
-            msg = "Bentornato a casa!"
+        msg = f"Bentornato! Sei stato fuori {durata_str}." if durata_str else "Bentornato a casa!"
+
+        if _llm_ref:
+            try:
+                from langchain_core.messages import HumanMessage
+                prompt = (
+                    f"L'utente è appena rientrato a casa dopo essere stato fuori per {durata_str}. " if durata_str else "L'utente è appena rientrato a casa. "
+                ) + "Dai un caloroso e breve bentornato a voce, con una frase ben strutturata e naturale. Non usare emoji o caratteri speciali."
+                
+                risposta = _llm_ref.invoke([HumanMessage(content=prompt)])
+                if risposta and risposta.content:
+                    msg = risposta.content.strip()
+            except Exception as e:
+                _log("ERR", f"Errore LLM benvenuto: {e}")
+
         _log("RIENTRO", f"→ '{msg}'")
         _parla(msg)
-        _notifica("🏠 RIENTRO", msg)
+        _notifica("🤖 IDIS — 🏠 RIENTRO", msg)
         _log("RIENTRO", "Benvenuto completato.", t1)
     except Exception as e:
         _log("ERR", f"Benvenuto: {e}")
@@ -440,8 +461,13 @@ def _rientro_step_mail():
 
         righe = [f"{m.get('emoji','📧')} {m['riassunto']}" for m in classificate]
         msg   = f"Durante la tua assenza sono arrivate {len(classificate)} mail importanti:\n" + "\n".join(righe)
-        _notifica("📬 MAIL ASSENZA", msg)
-        _parla(f"Hai ricevuto {len(classificate)} mail importanti mentre eri fuori.")
+        _notifica("🤖 IDIS — 📬 MAIL", msg)
+        
+        # Testo da leggere a voce (rimuoviamo le emoji per la voce e creiamo una frase fluida)
+        vocale_msg = f"Hai ricevuto {len(classificate)} mail importanti mentre eri fuori. "
+        for m in classificate:
+            vocale_msg += f"Una mail è {m['riassunto']}. "
+        _parla(vocale_msg)
 
         # Aggiorna dashboard
         if _js_callback:
@@ -477,7 +503,7 @@ def _rientro_step_agenda():
 
         if righe_future:
             msg = "Per il resto della giornata hai: " + "; ".join(righe_future[:3])
-            _notifica("📅 AGENDA", msg)
+            _notifica("🤖 IDIS — 📅 AGENDA", msg)
             _parla(f"Oggi hai ancora {len(righe_future)} impegni.")
     except Exception as e:
         _log("ERR", f"Agenda: {e}")
@@ -550,6 +576,27 @@ def inizializza(llm, ui_notify, tts_parla, js_callback=None):
     _log("OK", "Profilo uscita inizializzato.")
 
 
+def _avvia_conto_alla_rovescia_uscita(testo: str):
+    """Ritarda l'attivazione vera e propria del profilo uscita di 5 minuti.
+    Se viene chiamato di nuovo, il timer si resetta."""
+    if _stato.get("timer_avvio_uscita"):
+        _stato["timer_avvio_uscita"].cancel()
+
+    _stato["testo_uscita_pendente"] = testo
+
+    def _chiamata_ritardata():
+        _stato["timer_avvio_uscita"] = None
+        txt = _stato.get("testo_uscita_pendente", "")
+        _stato["testo_uscita_pendente"] = None
+        esegui_profilo_uscita(txt)
+
+    t = threading.Timer(300, _chiamata_ritardata) # 5 minuti
+    t.daemon = True
+    t.start()
+    _stato["timer_avvio_uscita"] = t
+    _log("USCITA", "Avvio profilo posticipato tra 5 minuti.")
+
+
 def gestisci_messaggio(testo: str) -> bool:
     """
     Chiamato da elabora_risposta() per ogni messaggio utente.
@@ -558,14 +605,35 @@ def gestisci_messaggio(testo: str) -> bool:
     """
     intenzione = rileva_intenzione(testo)
     if intenzione == "uscita":
+        # Se è GIA' fuori, e dice di nuovo di uscire, forse voleva ignorare e resettare? In genere, diamo un esito silenzioso.
+        if _stato["fuori"]:
+            _log("USCITA", "Già fuori — comando di uscita ignorato.")
+            return True
         _log("USCITA", f"Keyword rilevata: '{testo[:50]}'")
-        threading.Thread(target=esegui_profilo_uscita, args=(testo,), daemon=True).start()
+        _avvia_conto_alla_rovescia_uscita(testo)
         return True
     elif intenzione == "rientro":
         _log("RIENTRO", f"Keyword rilevata: '{testo[:50]}'")
+        if _stato.get("timer_avvio_uscita"):
+            _stato["timer_avvio_uscita"].cancel()
+            _stato["timer_avvio_uscita"] = None
+            _stato["testo_uscita_pendente"] = None
+            _log("USCITA", "Timer uscita annullato per rientro immediato.")
         threading.Thread(target=esegui_profilo_rientro, daemon=True).start()
         return True
-    return False
+    else:
+        # Nessuna intenzione, ma se c'è un timer pendente, l'utente è ancora attivo: resettalo.
+        if _stato.get("timer_avvio_uscita"):
+            _log("USCITA", "Interazione durante l'attesa. Reset timer uscita (5 min).")
+            _avvia_conto_alla_rovescia_uscita(_stato.get("testo_uscita_pendente", ""))
+            return False
+            
+        # Se invece è GIA' fuori, un messaggio palesa che è tornato!
+        if _stato["fuori"]:
+            _log("RIENTRO", "Interazione rilevata mentre fuori casa. Rientro automatico forzato.")
+            threading.Thread(target=esegui_profilo_rientro, daemon=True).start()
+
+        return False
 
 
 def stato_corrente() -> dict:
@@ -574,6 +642,7 @@ def stato_corrente() -> dict:
         "fuori":            _stato["fuori"],
         "ora_uscita":       _stato["ora_uscita"].isoformat() if _stato["ora_uscita"] else None,
         "ora_rientro_prev": _stato["ora_rientro_prev"].isoformat() if _stato["ora_rientro_prev"] else None,
+        "in_attesa_uscita": _stato.get("timer_avvio_uscita") is not None
     }
 
 

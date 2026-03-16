@@ -20,7 +20,7 @@ def _calcola_vettore(testo):
         risposta = requests.post(OLLAMA_EMBEDDING_URL, json={
             "model": MODELLO_EMBEDDING,
             "prompt": testo
-        }, timeout=5)
+        }, timeout=30)
         risposta.raise_for_status()
         return risposta.json()["embedding"]
     except Exception as e:
