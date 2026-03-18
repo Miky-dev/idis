@@ -224,31 +224,36 @@ class IDISApi:
                     city_param = urllib.parse.quote(city)
 
                 resp = requests.get(f"http://wttr.in/{city_param}?format=j1", timeout=10).json()
-                curr = resp['current_condition'][0]
-                
-                # Mapping icone base
-                code = curr['weatherCode']
-                # https://www.worldweatheronline.com/feed/wwo-codes.txt
-                icon = "☀️" # clear
-                if code in ["116"]: icon = "⛅" # partly cloudy
-                elif code in ["119", "122"]: icon = "☁️" # cloudy/overcast
-                elif code in ["143", "248", "260"]: icon = "🌫️" # fog
-                elif code in ["176", "263", "266", "293", "296", "299", "302", "305", "308"]: icon = "🌧️" # rain
-                elif code in ["200", "386", "389"]: icon = "⛈️" # thunder
-                elif code in ["227", "230", "323", "326", "329", "332", "335", "338"]: icon = "❄️" # snow
+                # wttr.in j1 format wraps everything in a 'data' key
+                data_res = resp.get('data', {})
+                if 'current_condition' in data_res and data_res['current_condition']:
+                    curr = data_res['current_condition'][0]
+                    
+                    # Mapping icone base
+                    code = curr.get('weatherCode', '0')
+                    # https://www.worldweatheronline.com/feed/wwo-codes.txt
+                    icon = "☀️" # clear
+                    if code in ["116"]: icon = "⛅" # partly cloudy
+                    elif code in ["119", "122"]: icon = "☁️" # cloudy/overcast
+                    elif code in ["143", "248", "260"]: icon = "🌫️" # fog
+                    elif code in ["176", "263", "266", "293", "296", "299", "302", "305", "308"]: icon = "🌧️" # rain
+                    elif code in ["200", "386", "389"]: icon = "⛈️" # thunder
+                    elif code in ["227", "230", "323", "326", "329", "332", "335", "338"]: icon = "❄️" # snow
 
-                data = {
-                    "temp": curr['temp_C'],
-                    "desc": curr['lang_it'][0]['value'] if 'lang_it' in curr else curr['weatherDesc'][0]['value'],
-                    "icon": icon,
-                    "hum": curr['humidity'] + "%",
-                    "wind": curr['windspeedKmph'] + " km/h",
-                    "feels": curr['FeelsLikeC'],
-                    "uv": curr['uvIndex'],
-                    "city": city
-                }
-                self._js("aggiornaMeteo", data)
-                print(f"☁️ Meteo aggiornato per {city or 'tua posizione'}: {data['temp']}°C, {data['desc']}")
+                    data = {
+                        "temp": curr.get('temp_C', '??'),
+                        "desc": curr['lang_it'][0]['value'] if 'lang_it' in curr and curr['lang_it'] else (curr['weatherDesc'][0]['value'] if 'weatherDesc' in curr and curr['weatherDesc'] else "N/D"),
+                        "icon": icon,
+                        "hum": curr.get('humidity', '??') + "%",
+                        "wind": curr.get('windspeedKmph', '??') + " km/h",
+                        "feels": curr.get('FeelsLikeC', '??'),
+                        "uv": curr.get('uvIndex', '??'),
+                        "city": city
+                    }
+                    self._js("aggiornaMeteo", data)
+                    print(f"☁️ Meteo aggiornato per {city or 'tua posizione'}: {data['temp']}°C, {data['desc']}")
+                else:
+                    print(f"☁️ Meteo per {city or 'tua posizione'}: dati non trovati nel JSON.")
             except Exception as e:
                 print(f"Error weather monitor: {e}")
             

@@ -1,0 +1,16 @@
+Dockerfile
+FROM qwen3.5:4b
+
+# Blocca la generazione non appena il modello prova a pensare o a chiudere il pensiero
+PARAMETER stop "<think>"
+PARAMETER stop "</think>"
+
+# Abbassa la "creatività" per aumentare la velocità e la precisione
+PARAMETER temperature 0.6
+
+# System prompt che vieta il ragionamento
+SYSTEM """
+Sei IDIS. Rispondi in modo istantaneo e coinciso. 
+NON usare tag <think>. NON analizzare i tuoi passaggi interni. 
+Vai dritto alla risposta o all'esecuzione del tool.
+"""

@@ -209,13 +209,18 @@ def _uscita_step_briefing():
             city = tl.posizione_cache.split(',')[0].strip() if "," in tl.posizione_cache else tl.posizione_cache.strip()
             city_param = urllib.parse.quote(city) if city and "Sconosciuta" not in city else ""
             res = requests.get(f"http://wttr.in/{city_param}?format=j1", timeout=5).json()
-            curr = res['current_condition'][0]
-            desc = curr['lang_it'][0]['value'] if 'lang_it' in curr else curr['weatherDesc'][0]['value']
-            temp = curr['temp_C']
-            luogo = city if city and "Sconosciuta" not in city else "qui"
-            meteo_str = f"Meteo {luogo}: {temp}°C, {desc}"
-            parti.append(meteo_str)
-            _log("BRIEFING", meteo_str, t1)
+            # wttr.in j1 format wraps everything in a 'data' key
+            data_res = res.get('data', {})
+            if 'current_condition' in data_res and data_res['current_condition']:
+                curr = data_res['current_condition'][0]
+                desc = curr['lang_it'][0]['value'] if 'lang_it' in curr and curr['lang_it'] else (curr['weatherDesc'][0]['value'] if 'weatherDesc' in curr and curr['weatherDesc'] else "meteo non disponibile")
+                temp = curr.get('temp_C', '??')
+                luogo = city if city and "Sconosciuta" not in city else "qui"
+                meteo_str = f"Meteo {luogo}: {temp}°C, {desc}"
+                parti.append(meteo_str)
+                _log("BRIEFING", meteo_str, t1)
+            else:
+                _log("BRIEFING", "Dati meteo non disponibili nel JSON (chiave 'data' o 'current_condition' mancante)", t1)
         except Exception as e:
             _log("ERR", f"Meteo: {e}")
 

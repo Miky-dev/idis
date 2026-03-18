@@ -189,8 +189,24 @@ def avvia_background():
         from iphone_bridge import avvia_server as avvia_iphone
         avvia_iphone()
 
-        # 8. Boot completato — porta l'ESP32 in modalità IDLE (ascolto)
+        # 8. Avvia scheduler sveglia + server alarm
+        from alarm.alarm_service import start_scheduler, router as alarm_router
+        from fastapi import FastAPI
+        import uvicorn
+        start_scheduler()
+        _alarm_app = FastAPI()
+        _alarm_app.include_router(alarm_router)
+        threading.Thread(
+            target=lambda: uvicorn.run(_alarm_app, host="0.0.0.0", port=8000, log_level="warning"),
+            daemon=True,
+            name="AlarmServer"
+        ).start()
+        print("🌐 Alarm server avviato su porta 8000")
+
+        # 9. Boot completato — porta l'ESP32 in modalità IDLE (ascolto)
         esp32_bridge.set_ai_state("idle")
+
+        
 
     threading.Thread(target=_avvia_sequenza, daemon=True).start()
 

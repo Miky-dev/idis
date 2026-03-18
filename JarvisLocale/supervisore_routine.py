@@ -300,10 +300,15 @@ def _controlla_calendario():
                                 city = tl.posizione_cache.split(',')[0].strip() if "," in tl.posizione_cache else tl.posizione_cache.strip()
                                 city_param = urllib.parse.quote(city) if city and "Sconosciuta" not in city else ""
                                 res = requests.get(f"http://wttr.in/{city_param}?format=j1", timeout=5).json()
-                                curr = res['current_condition'][0]
-                                desc = curr['lang_it'][0]['value'] if 'lang_it' in curr else curr['weatherDesc'][0]['value']
-                                temp = curr['temp_C']
-                                meteo_str = f"{temp}°C e {desc}"
+                                # wttr.in j1 format wraps everything in a 'data' key
+                                data_res = res.get('data', {})
+                                if 'current_condition' in data_res and data_res['current_condition']:
+                                    curr = data_res['current_condition'][0]
+                                    desc = curr['lang_it'][0]['value'] if 'lang_it' in curr and curr['lang_it'] else (curr['weatherDesc'][0]['value'] if 'weatherDesc' in curr and curr['weatherDesc'] else "meteo non disponibile")
+                                    temp = curr.get('temp_C', '??')
+                                    meteo_str = f"{temp}°C e {desc}"
+                                else:
+                                    meteo_str = "meteo non disponibile al momento"
                                 
                                 prompt = (
                                     f"Tra mezz'ora l'utente stringerà un impegno chiamato '{t}'. "

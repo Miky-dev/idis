@@ -48,7 +48,7 @@ async def _fetch_calendar() -> str:
     from google.oauth2.credentials import Credentials
     from googleapiclient.discovery import build
 
-    creds = Credentials.from_authorized_user_file("token.json")
+    creds = Credentials.from_authorized_user_file(r"C:\MikyDesktop\COSE\progetti\EDITH\idis\token_mail.json")
     service = build("calendar", "v3", credentials=creds)
     today = datetime.now().date()
     t_min = datetime.combine(today, datetime.min.time()).isoformat() + "Z"
@@ -88,7 +88,7 @@ async def generate_briefing(wake_time: datetime, sensor_data: dict) -> str:
     temp_min    = weather["daily"]["temperature_2m_min"][0]
     rain_chance = max(weather["hourly"]["precipitation_probability"][:12])
 
-    prompt = f"""Sei JARVIS, l'assistente AI di Tony Stark. Genera il briefing mattutino in italiano, stile Iron Man 1.
+    prompt = f"""Sei IDIS, l'assistente AI di Michele vitella. Genera il briefing mattutino in italiano, stile Iron Man 1.
 Diretto, intelligente, leggermente ironico ma sempre efficiente. NON usare elenchi puntati: testo fluido e naturale.
 
 DATI:

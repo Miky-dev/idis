@@ -13,6 +13,11 @@
           "ora": "21:50",
           "fonte": "keyword",
           "data": "2026-03-10"
+        },
+        {
+          "ora": "21:51",
+          "fonte": "keyword",
+          "data": "2026-03-17"
         }
       ],
       "gio": [
@@ -75,8 +80,17 @@
           "data": "2026-03-12"
         }
       ]
+    },
+    "cena": {
+      "mar": [
+        {
+          "ora": "20:18",
+          "fonte": "gap+schermo",
+          "data": "2026-03-17"
+        }
+      ]
     }
   },
-  "ultimo_messaggio": "2026-03-12T19:00:48.147445",
+  "ultimo_messaggio": "2026-03-17T22:17:16.483981",
   "stabilizzazioni_notificate": []
 }
