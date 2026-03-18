@@ -4,6 +4,8 @@ __pycache__/
 .env
 credentials.json
 token.json
+token_calendar.json
+token_mail.json
 memoria_utente.json
 *.log
 .DS_Store
