@@ -34,6 +34,8 @@ from actions.tools_location import ottieni_posizione, posizione_cache
 from actions import tools_tts
 from actions import tools_sounds
 from actions.tools_handmouse import attiva_controllo_mano, disattiva_controllo_mano
+from actions.tools_computer_set import esegui_azione_computer
+from actions.tools_computer_controll import controllo_avanzato_computer
 import esp32_bridge
 from automations.tools_mail import leggi_mail_importanti 
 
@@ -73,7 +75,8 @@ else:
 llm_veloce = llm
 
 # Pre-bind dei tool di default
-TOOL_DEFAULT = [cerca_su_internet, ricorda_informazione]
+#TOOL_DEFAULT = [cerca_su_internet, ricorda_informazione]
+TOOL_DEFAULT = [ricorda_informazione]
 llm_default = llm.bind_tools(TOOL_DEFAULT)
 
 # ✅ Cache dei bind_tools — evita ricalcolo dello schema ad ogni messaggio
@@ -83,13 +86,14 @@ _bind_cache[_bind_cache_default_key] = llm_default
 
 # ✅ [OPT] Prompt Statico per favorire il KV Caching di Ollama
 # Il grosso del prompt (regole e identità) deve rimanere INVARIATO tra le sessioni.
-SYSTEM_PROMPT_STATICO = """Sei IDIS, un assistente IA avanzato.
+SYSTEM_PROMPT_STATICO = """Ti chiami IDIS, un assistente IA avanzato.
 REGOLE CRITICHE ASSOLUTE:
-1. NON USARE EMOJI O CARATTERI SPECIALI.
-2. Usa i tool ogni volta che l'utente chiede un'azione concreta.
-3. Se decidi di usare un tool, NON RAGIONARE nel testo, emetti SOLO la chiamata al tool.
-4. RICERCA ONLINE: genera risposte estremamente brevi, coese e sintetiche (massimo 1-2 frasi), poiché l'utente approfondirà autonomamente sui siti aperti.
-5. METEO: usa 'mostra_meteo'. MEMORIA: usa 'ricorda_informazione'. Sii naturale e conciso."""
+1. VELOCITÀ: Rispondi il più velocemente possibile, non perdere tempo a pensare.
+2. NON USARE EMOJI O CARATTERI SPECIALI.
+3. Usa i tool ogni volta che l'utente chiede un'azione concreta.
+4. Se decidi di usare un tool, NON RAGIONARE nel testo, emetti SOLO la chiamata al tool.
+5. RICERCA ONLINE: genera risposte estremamente brevi, coese e sintetiche (massimo 1-2 frasi), poiché l'utente approfondirà autonomamente sui siti aperti.
+6. METEO: usa 'mostra_meteo'. MEMORIA: usa 'ricorda_informazione'. Sii naturale e conciso."""
 
 def pre_cache_bindings():
     """Compila e pre-cacha FISICAMENTE i binding per le combinazioni di tool più comuni."""
@@ -217,8 +221,12 @@ def avvia_background():
 
 def _seleziona_tool(testo_lower: str) -> list:
     """Determina quali tool rendere disponibili in base al testo utente."""
-    tutti_i_tool = [cerca_su_internet, ricorda_informazione, ottieni_posizione]
+    #prima di llama3.1    tutti_i_tool = [cerca_su_internet, ricorda_informazione, ottieni_posizione]
+    tutti_i_tool = [ricorda_informazione, ottieni_posizione]
 
+    if any(k in testo_lower for k in ["cerca", "trova", "chi", "cosa significa", "quant", "perché", "notizie", "internet", "online", "significato", "spiega"]):
+        tutti_i_tool.append(cerca_su_internet)
+    #aggiunta dopo
     if any(k in testo_lower for k in ["meteo", "tempo", "piove", "pioggia", "sole", "temperatura",
                                        "previsioni", "ombrello", "caldo", "freddo", "neve", "vento"]):
         tutti_i_tool.append(mostra_meteo)
@@ -288,6 +296,12 @@ def _seleziona_tool(testo_lower: str) -> list:
                                        "attiva controllo remoto", "disattiva controllo remoto", "mouse con la mano",
                                        "usa la mano", "gesti mano", "attiva mano", "disattiva mano", "dammi poteri", "poteri", "togli poteri"]):
         tutti_i_tool.extend([attiva_controllo_mano, disattiva_controllo_mano]) 
+
+    if any(k in testo_lower for k in ["volume", "luminosità", "luminosita", "chiudi app", "schermo intero", "finestra", "scrivi", "spegni schermo", "abbassa", "alza", "schermo", "minimizza", "massimizza", "ricarica", "scheda", "zoom"]):
+        tutti_i_tool.append(esegui_azione_computer)
+
+    if any(k in testo_lower for k in ["clicca", "click", "mouse", "scorciatoia", "tasto", "incolla", "copia", "screenshot", "schermata", "trova sullo", "muovi il mouse", "trascina", "seleziona tutto", "premi invio", "premi f5"]):
+        tutti_i_tool.append(controllo_avanzato_computer)
 
     # Rimuovi duplicati
     visti = set()

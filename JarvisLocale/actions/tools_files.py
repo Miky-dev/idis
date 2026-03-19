@@ -109,9 +109,17 @@ bozza_spostamento = {}
 def prepara_spostamento_file(estensione: str, da_posizione: str, cartella_destinazione: str, posizione_destinazione: str = "desktop") -> str:
     """
     Usa questo strumento QUANDO L'UTENTE TI CHIEDE DI SPOSTARE O ORGANIZZARE FILE.
-    Questo strumento NON sposta i file fisicamente, li conta solo e prepara l'operazione in sicurezza.
+    ATTENZIONE: NON HAI IL PERMESSO DI SPOSTARE TUTTI I FILE IN BLOCCO. 
+    Se l'utente chiede di spostare "tutti i file", digli che per sicurezza deve specificare un'estensione precisa.
+    Questo strumento NON sposta i file fisicamente, li conta solo, spiega all'utente cosa sta per fare e attende la SUA CONFERMA.
     """
     global bozza_spostamento
+    estensione = estensione.strip()
+    
+    # Blocco di sicurezza anti "sposta tutti i file"
+    if estensione.lower() in ["*", ".*", "", "tutti", "all", "."]:
+        return "Operazione negata per sicurezza: Non è permesso spostare 'tutti' i file alla cieca. Chiedi all'utente di specificare un'estensione precisa (es. '.pdf')."
+
     if not estensione.startswith("."):
         estensione = "." + estensione
 
@@ -139,7 +147,7 @@ def prepara_spostamento_file(estensione: str, da_posizione: str, cartella_destin
         "file_trovati": file_trovati
     }
 
-    return f"'Ho trovato {numero_file} file {estensione} in {da_posizione}. Procedo a spostarli nella cartella {cartella_destinazione}?'"
+    return f"Spiega COMPLETAMENTE all'utente: 'Ho trovato {numero_file} file {estensione} in {da_posizione}. Sei sicuro di volerli spostare nella cartella {cartella_destinazione}?' E FERMATI IN ATTESA DI CONFERMA."
 
 @tool 
 def conferma_spostamento_file() -> str:
