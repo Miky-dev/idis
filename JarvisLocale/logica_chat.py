@@ -38,6 +38,7 @@ from actions.tools_computer_set import esegui_azione_computer
 from actions.tools_computer_controll import controllo_avanzato_computer
 import esp32_bridge
 from automations.tools_mail import leggi_mail_importanti 
+from actions.tools_esp32_sveglia import invia_comando_sveglia
 
 
 load_dotenv()
@@ -56,16 +57,17 @@ llm_provider = os.getenv("LLM_PROVIDER", "ollama").lower()
 model_local = os.getenv("MODEL_LOCAL", "qwen3:8b")
 model_remote = os.getenv("MODEL_REMOTE", "gemini-2.0-flash-lite")
 
+THINKING_BUDGET_MAP = {"low": 1024, "medium": 8192, "high": 32768}
+thinking_budget_key = os.getenv("OLLAMA_THINKING_BUDGET", "low")
+thinking_budget = THINKING_BUDGET_MAP.get(thinking_budget_key, 1024)
+
 if llm_provider == "ollama":
-    print(f"⚡ Avvio IDIS con modello LOCALE: {model_local}")
-    # ✅ [OPT] Usiamo un'unica istanza con parametri costanti per massimizzare il riutilizzo della cache di Ollama
-    # num_ctx=4096 aiuta a mantenere lo spazio in VRAM costante.
+    print(f"⚡ Avvio IDIS con modello LOCALE: {model_local} [think budget: {thinking_budget_key}]")
     llm = ChatOllama(
         model=model_local,
         temperature=0.1,
         num_ctx=4096,
-        # Passa think=False nativamente — supportato da Ollama recente
-        extra_body={"think": False},
+        extra_body={"think": True, "thinking_budget": thinking_budget},
     )
 else:
     print(f"🚀 Avvio IDIS con modello REMOTO (Google): {model_remote}")
@@ -198,6 +200,10 @@ def avvia_background():
         from fastapi import FastAPI
         import uvicorn
         start_scheduler()
+        
+        from actions.tools_esp32_sveglia import verifica_connessione_sveglia
+        threading.Thread(target=verifica_connessione_sveglia, daemon=True).start()
+        
         _alarm_app = FastAPI()
         _alarm_app.include_router(alarm_router)
         threading.Thread(
@@ -302,6 +308,9 @@ def _seleziona_tool(testo_lower: str) -> list:
 
     if any(k in testo_lower for k in ["clicca", "click", "mouse", "scorciatoia", "tasto", "incolla", "copia", "screenshot", "schermata", "trova sullo", "muovi il mouse", "trascina", "seleziona tutto", "premi invio", "premi f5"]):
         tutti_i_tool.append(controllo_avanzato_computer)
+
+    if any(k in testo_lower for k in ["protocollo", "alba rossa", "stark station", "spegni tutto"]):
+        tutti_i_tool.append(invia_comando_sveglia)
 
     # Rimuovi duplicati
     visti = set()
