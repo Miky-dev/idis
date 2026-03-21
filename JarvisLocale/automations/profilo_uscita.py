@@ -267,18 +267,7 @@ def _uscita_step_briefing():
 
 def _uscita_step_dispositivi():
     time.sleep(1)
-    try:
-        t1 = time.time()
-        from actions.tools_arduino import get_stato_led, controlla_led
-        stato_led = get_stato_led()
-        _stato["led_era_acceso"] = stato_led not in ("off", "spento", "SPENTO", "", None)
-        if _stato["led_era_acceso"]:
-            controlla_led.invoke({"comando": "off"})
-            _log("LED", f"Spento (era: {stato_led}).", t1)
-        else:
-            _log("LED", f"Già spento — nessuna azione.")
-    except Exception as e:
-        _log("ERR", f"LED uscita: {e}")
+    # LED rimosso
 
     try:
         t1 = time.time()
@@ -394,16 +383,7 @@ def _rientro_step_benvenuto(durata_str: str):
 
 def _rientro_step_dispositivi():
     time.sleep(2)
-    try:
-        t1 = time.time()
-        from actions.tools_arduino import controlla_led
-        if _stato["led_era_acceso"]:
-            controlla_led.invoke({"comando": "on"})
-            _log("LED", "Riacceso.", t1)
-        else:
-            _log("LED", "Era spento prima dell'uscita — nessuna azione.")
-    except Exception as e:
-        _log("ERR", f"LED rientro: {e}")
+    # LED rimosso
 
     try:
         t1 = time.time()

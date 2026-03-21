@@ -10,7 +10,6 @@ from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, Tool
 
 from tools_os import apri_applicazione
 from tools_web import cerca_su_internet
-from actions.tools_arduino import imposta_animazione_pensiero
 import esp32_bridge
 from alarm.alarm_service import router as alarm_router, scheduler, start_scheduler
 from esp32_bridge import router as esp32_router
@@ -89,7 +88,6 @@ NON usare strumenti per aprire app a meno che non sia strettamente richiesto dal
     ]
 
     print("⏳ Sto pensando...")
-    imposta_animazione_pensiero(True)
     esp32_bridge.set_ai_state("thinking")
 
     trigger_app = ["apri", "avvia", "lancia", "mostrami", "aprimi", "fammi vedere", "start"]
@@ -126,14 +124,11 @@ NON usare strumenti per aprire app a meno che non sia strettamente richiesto dal
                 print("⏳ Elaborazione della risposta finale...")
                 risposta_finale = llm_attivo.invoke(messaggi)
                 messaggi.append(risposta_finale)
-                imposta_animazione_pensiero(False)
                 print(f"\n🤖 Jarvis: {risposta_finale.content}")
             else:
-                imposta_animazione_pensiero(False)
                 print(f"⚠️  Strumento '{nome_tool}' non riconosciuto.")
     else:
         messaggi.append(risposta)
-        imposta_animazione_pensiero(False)
         print(f"\n🤖 Jarvis: {risposta.content}")
 
     esp32_bridge.set_ai_state("idle")

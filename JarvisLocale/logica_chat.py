@@ -27,7 +27,6 @@ from actions.tools_whatsapp import prepara_messaggio_whatsapp, conferma_invio_wh
 from actions.tools_files import crea_cartella, prepara_spostamento_file, conferma_spostamento_file, rinomina_elemento
 from actions.tools_calendar import leggi_calendario, ottieni_eventi_precaricati, aggiungi_evento_calendario, elimina_evento_calendario
 from tools_routine import imposta_sveglia, ottieni_sveglie_attive, leggi_routine, aggiungi_alla_routine, rimuovi_dalla_routine
-from actions.tools_arduino import controlla_led, ottieni_stato_led, imposta_animazione_pensiero, get_stato_led
 from tools_memory import leggi_memoria, ricorda_informazione
 from actions.tools_vision import esegui_visione
 from actions.tools_location import ottieni_posizione, posizione_cache
@@ -104,7 +103,6 @@ def pre_cache_bindings():
     print("⏳ Avvio pre-caching sequenziale dei tool binding...")
     comuni = [
         [mostra_meteo, cerca_su_internet, ricorda_informazione], 
-        [controlla_led, ottieni_stato_led, cerca_su_internet, ricorda_informazione], 
         [riproduci_canzone, riproduci_playlist, controlla_spotify, cosa_sta_suonando, cerca_su_internet, ricorda_informazione], 
         [leggi_calendario, aggiungi_evento_calendario, elimina_evento_calendario, cerca_su_internet, ricorda_informazione]
     ]
@@ -259,10 +257,6 @@ def _seleziona_tool(testo_lower: str) -> list:
                                        "le mie routine", "cosa ho di routine"]):
         tutti_i_tool.extend([leggi_routine, aggiungi_alla_routine, rimuovi_dalla_routine, mostra_profilo_routine])
 
-    if any(k in testo_lower for k in ["luce", "led", "accendi", "spegni", "illumina", "lampada",
-                                       "scrivania", "luci", "luminosità", "stato luce"]):
-        tutti_i_tool.extend([controlla_led, ottieni_stato_led])
-
     if any(k in testo_lower for k in ["spotify", "musica", "canzone", "playlist", "suona",
                                    "metti", "pausa", "volume", "skip", "avanti", "cosa sta"]):
         tutti_i_tool.extend([riproduci_canzone, riproduci_playlist, controlla_spotify, cosa_sta_suonando])
@@ -309,7 +303,7 @@ def _seleziona_tool(testo_lower: str) -> list:
     if any(k in testo_lower for k in ["clicca", "click", "mouse", "scorciatoia", "tasto", "incolla", "copia", "screenshot", "schermata", "trova sullo", "muovi il mouse", "trascina", "seleziona tutto", "premi invio", "premi f5"]):
         tutti_i_tool.append(controllo_avanzato_computer)
 
-    if any(k in testo_lower for k in ["protocollo", "alba rossa", "stark station", "spegni tutto"]):
+    if any(k in testo_lower for k in [ "accendi", "spegni", "cyberpunk", "letto","luce letto", "luci letto", "luci comodino", "modalità", "modalita", "protocollo", "alba rossa", "stark station", "spegni tutto", "letto", "comodino", "luminosità", "luminosita", "intensità", "intensita", "luce al massimo", "luce media", "luce bassa"]):
         tutti_i_tool.append(invia_comando_sveglia)
 
     # Rimuovi duplicati
@@ -378,13 +372,11 @@ def elabora_risposta(testo_utente: str, ui_callbacks: dict):
     testo_lower_check = testo_utente.strip().lower()
     if any(k in testo_lower_check for k in TRIGGER_VISIONE):
         set_stato("thinking")
-        imposta_animazione_pensiero(True)
         aggiungi("🤖 IDIS", "", "lightblue")
         # Scatta e analizza in thread (bloccante ~2-5s)
         domanda_visione = testo_utente if len(testo_utente.split()) > 3 else "Descrivi in dettaglio cosa vedi nell'immagine in italiano."
         risposta_visione = esegui_visione(domanda_visione, model_local)
         aggiorna(risposta_visione)
-        imposta_animazione_pensiero(False)
         set_stato("speaking")
         tools_tts.parla(risposta_visione)
         cronologia_chat.append(HumanMessage(content=testo_utente))
@@ -396,7 +388,6 @@ def elabora_risposta(testo_utente: str, ui_callbacks: dict):
         return
 
     set_stato("thinking")
-    imposta_animazione_pensiero(True)
     tools_sounds.thinking()
 
     # ✅ [OPT] Contesto dinamico (ora, posizione, stato) messo in un messaggio a parte.
@@ -412,13 +403,12 @@ def elabora_risposta(testo_utente: str, ui_callbacks: dict):
         ricordi_ripescati = []
     testo_ricordi = "\n".join([f"- {r}" for r in ricordi_ripescati]) if ricordi_ripescati else "Nessun ricordo pertinente."
 
-    stato_luce = get_stato_led()
     memoria_strutturata = leggi_memoria()
     testo_memoria_json = ", ".join([f"{k}: {v}" for k, v in memoria_strutturata.items()]) if memoria_strutturata else "Nessun dato personale."
 
     import actions.tools_location as tl
     testo_contesto = f"""Oggi: {giorno_settimana} {data_odierna}. Ora: {ora_minuto}. Posizione: {tl.posizione_cache}
-STATO HW: LED {stato_luce}. MEM: {testo_memoria_json}.
+MEM: {testo_memoria_json}.
 RICORDI: {testo_ricordi}
 CALENDARIO: {eventi_precaricati[:500]}""" # tronca per evitare prompt troppo lunghi
 
@@ -474,9 +464,7 @@ CALENDARIO: {eventi_precaricati[:500]}""" # tronca per evitare prompt troppo lun
                         if not _tts_avviato:
                             tools_tts.avvia_sessione_streaming()
                             _tts_avviato = True
-                        if not _primo_testo_ricevuto:
                             set_stato("speaking")
-                            imposta_animazione_pensiero(False)
                             tools_sounds.speaking()
                             _primo_testo_ricevuto = True
                         aggiorna(chunk.content)
@@ -511,7 +499,6 @@ CALENDARIO: {eventi_precaricati[:500]}""" # tronca per evitare prompt troppo lun
                             tool_call_id=tool_call['id']
                         ))
 
-                        imposta_animazione_pensiero(False)
                         set_stato("idle")
                         cronologia_chat.append(AIMessage(content=str(risultato)))
                         return
@@ -535,7 +522,6 @@ CALENDARIO: {eventi_precaricati[:500]}""" # tronca per evitare prompt troppo lun
             testo_finale = "Azione completata."
             aggiorna(testo_finale)
 
-        imposta_animazione_pensiero(False)
         cronologia_chat.append(AIMessage(content=testo_finale))
 
         # Chiude lo stream TTS (non bloccante) e torna idle subito
@@ -544,7 +530,6 @@ CALENDARIO: {eventi_precaricati[:500]}""" # tronca per evitare prompt troppo lun
         set_stato("idle")
 
     except Exception as e:
-        imposta_animazione_pensiero(False)
         tools_sounds.error()
         set_stato("idle")
         aggiungi("Errore", f"Errore: {str(e)}", "red")

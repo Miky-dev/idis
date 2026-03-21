@@ -1252,10 +1252,7 @@
                     <div class="hw-name">💡 LED</div>
                     <div class="hw-badge off-b" id="ledBadge">SPENTO</div>
                 </div>
-                <div class="hw-row">
-                    <div class="hw-name">🔌 Arduino</div>
-                    <div class="hw-badge off-b" id="arduinoBadge">N/C</div>
-                </div>
+
                 <div class="hw-row">
                     <div class="hw-name">🤖 Qwen3 8B</div>
                     <div class="hw-badge on" id="modelBadge">IN VRAM</div>
@@ -1469,13 +1466,7 @@
                 ledEl.textContent = acceso ? 'ACCESO' : 'SPENTO';
                 ledEl.className = 'hw-badge ' + (acceso ? 'on' : 'off-b');
             }
-            // Arduino
-            if (hw.arduino !== undefined) {
-                const ardEl = document.getElementById('arduinoBadge');
-                const conn = hw.arduino === 'CONN.';
-                ardEl.textContent = hw.arduino;
-                ardEl.className = 'hw-badge ' + (conn ? 'on' : 'off-b');
-            }
+
         }
 
         function aggiungiMessaggio(mittente, testo) {

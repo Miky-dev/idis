@@ -18,7 +18,7 @@ from logica_chat import (
     posizione_cache,
 )
 import psutil
-from actions.tools_arduino import get_stato_led
+
 from tools_memory import leggi_memoria
 from tools_routine import ottieni_sveglie_attive
 import esp32_bridge
@@ -93,12 +93,11 @@ class IDISApi:
             "eventi_calendario": ev,
             "posizione": tl.posizione_cache,
             "sveglie": sveglie,
-            "memoria": memoria,
-            "stato_led": get_stato_led(),
+            "stato_led": "N/C",
         }
 
     def get_stato_led(self) -> str:
-        return get_stato_led()
+        return "N/C"
 
     def reset_chat(self) -> None:
         """Azzera la cronologia chat."""
@@ -182,20 +181,7 @@ class IDISApi:
                 }
                 self._js("aggiornaStatsSistema", stats)
 
-                # ── LED / Arduino — aggiorna solo se cambia ──────────
-                try:
-                    from actions.tools_arduino import get_stato_led, arduino as _arduino
-                    led_stato    = get_stato_led()
-                    arduino_conn = _arduino is not None and _arduino.is_open
-                    hw = {
-                        "led":     led_stato,
-                        "arduino": "CONN." if arduino_conn else "N/C",
-                    }
-                    if hw != _ultimo_led_stato:
-                        _ultimo_led_stato = hw
-                        self._js("aggiornaHardware", hw)
-                except Exception:
-                    pass
+                # ── LED / Arduino rimosso ──────────
 
             except Exception as e:
                 print(f"[MONITOR] Errore: {e}")
