@@ -57,11 +57,45 @@ async def stark_sensori(data: dict):
     _log("STARK", f"Temp: {stark_station_data['temperatura']}°C | Umidità: {stark_station_data['umidita']}%")
     return {"status": "ok"}
 
+_timer_assenza = None
+
 @router.post("/stark_station/presenza")
 async def stark_presenza(data: dict):
-    stark_station_data["presenza"] = data.get("presenza", False)
-    stato_str = "Rilevata" if stark_station_data["presenza"] else "Nessuno"
+    global _timer_assenza
+    presenza_attuale = data.get("presenza", False)
+    stark_station_data["presenza"] = presenza_attuale
+    stato_str = "Rilevata" if presenza_attuale else "Nessuno"
     _log("STARK", f"Presenza: {stato_str}")
+    
+    try:
+        from automations.profilo_uscita import esegui_profilo_uscita, esegui_profilo_rientro
+        
+        if presenza_attuale:
+            if _timer_assenza is not None:
+                _timer_assenza.cancel()
+                _timer_assenza = None
+                _log("STARK", "Timer assenza annullato (presenza rilevata).")
+            
+            # Prova a rientrare (il modulo stesso controlla se l'utente era "fuori")
+            threading.Thread(target=esegui_profilo_rientro, daemon=True).start()
+        else:
+            if _timer_assenza is None:
+                def scadenza_assenza():
+                    global _timer_assenza
+                    _timer_assenza = None
+                    if not stark_station_data["presenza"]:
+                        _log("STARK", "Timeout 5 min senza attività: avvio profilo uscita.")
+                        # Forza l'uscita automatica
+                        esegui_profilo_uscita("Assenza rilevata dalla Stark Station")
+                        
+                _timer_assenza = threading.Timer(300.0, scadenza_assenza) # 300 sec = 5 min
+                _timer_assenza.daemon = True
+                _timer_assenza.start()
+                _log("STARK", "Nessuna presenza: avviato timer di 5 minuti.")
+                
+    except Exception as e:
+        _log("STARK", f"Errore gestione timer presenza: {e}")
+        
     return {"status": "ok"}
 
 # ══════════════════════════════════════════════════════════════
