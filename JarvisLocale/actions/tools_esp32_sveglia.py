@@ -90,3 +90,36 @@ def leggi_sensori_stanza() -> str:
     msg = f"Sensori Camera: {temp}°C, Umidità al {umid}%. {str_pres}."
     print(f"JARVIS: {msg}")
     return msg
+
+@tool
+def imposta_sveglia(ora: int, minuto: int, stop_ora: int = 9, stop_minuto: int = 45, abilitata: bool = True) -> str:
+    """
+    Imposta la sveglia programmata sulla Stark Station.
+    - ora / minuto: orario di attivazione (alba rossa + buzzer)
+    - stop_ora / stop_minuto: orario di spegnimento automatico
+    - abilitata: True per attivare, False per disabilitare
+    """
+    params = {
+        "ora":          ora,
+        "minuto":       minuto,
+        "stop_ora":     stop_ora,
+        "stop_minuto":  stop_minuto,
+        "abilitata":    "1" if abilitata else "0"
+    }
+    try:
+        risposta = requests.get(f"{ESP32_IP}/sveglia_set", params=params, timeout=3)
+        if risposta.status_code == 200:
+            # Aggiorna stato locale per la dashboard
+            try:
+                from alarm.alarm_service import _stark_alarm
+                _stark_alarm["ora"]          = ora
+                _stark_alarm["minuto"]       = minuto
+                _stark_alarm["stop_ora"]     = stop_ora
+                _stark_alarm["stop_minuto"]  = stop_minuto
+                _stark_alarm["abilitata"]    = abilitata
+            except Exception:
+                pass
+            return risposta.text
+        return f"Errore HTTP {risposta.status_code}"
+    except requests.exceptions.RequestException as e:
+        return f"Impossibile contattare la Stark Station. Errore: {e}"

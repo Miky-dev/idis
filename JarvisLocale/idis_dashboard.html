@@ -1160,26 +1160,8 @@
                 <div class="c tl"></div>
                 <div class="c br"></div>
                 <div class="card-label">// sveglie</div>
-                <div class="sv-item">
-                    <div>
-                        <div class="sv-time">07:30</div>
-                        <div class="sv-lbl">Lun–Ven</div>
-                    </div>
-                    <div class="toggle" onclick="this.classList.toggle('off')"></div>
-                </div>
-                <div class="sv-item">
-                    <div>
-                        <div class="sv-time">09:00</div>
-                        <div class="sv-lbl">Weekend</div>
-                    </div>
-                    <div class="toggle" onclick="this.classList.toggle('off')"></div>
-                </div>
-                <div class="sv-item">
-                    <div>
-                        <div class="sv-time">14:50</div>
-                        <div class="sv-lbl">Riunione — oggi</div>
-                    </div>
-                    <div class="toggle off" onclick="this.classList.toggle('off')"></div>
+                <div id="sveglie-placeholder" style="font-size:11px;color:var(--text-faint);padding:10px 0">
+                    Caricamento sveglie...
                 </div>
             </div>
             <div class="card" style="flex:1;animation-delay:.20s">
@@ -1558,11 +1540,23 @@
         function aggiornaSveglie(sveglie) {
             const container = document.querySelector('.col-right .card:first-child');
             if (!container) return;
+
+            // Rimuovi placeholder e sv-item esistenti
+            const ph = document.getElementById('sveglie-placeholder');
+            if (ph) ph.remove();
             container.querySelectorAll('.sv-item').forEach(e => e.remove());
+
+            if (!sveglie || sveglie.length === 0) {
+                container.insertAdjacentHTML('beforeend',
+                    '<div style="font-size:11px;color:var(--text-faint);padding:10px 0">Nessuna sveglia attiva</div>');
+                return;
+            }
+
             sveglie.slice(0, 4).forEach(sv => {
                 const div = document.createElement('div');
                 div.className = 'sv-item';
-                div.innerHTML = `<div><div class="sv-time">${sv.orario || '--:--'}</div><div class="sv-lbl">${sv.messaggio || ''}</div></div>
+                const iconaTipo = sv.tipo === 'calendario' ? '📅 ' : sv.tipo === 'stark' ? '⏰ ' : '';
+                div.innerHTML = `<div><div class="sv-time">${sv.orario || '--:--'}</div><div class="sv-lbl">${iconaTipo}${sv.messaggio || ''}</div></div>
       <div class="toggle ${sv.attiva ? '' : 'off'}" onclick="this.classList.toggle('off')"></div>`;
                 container.appendChild(div);
             });
@@ -1602,6 +1596,24 @@
                 window.pywebview.api.apri_meteo_browser();
             }
         }
+
+        // ── Polling sveglie reali da alarm_service ─────────────────
+        async function aggiornaListaSveglie() {
+            try {
+                const res = await fetch('http://localhost:8000/alarms/list', { signal: AbortSignal.timeout(3000) });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (data.sveglie && Array.isArray(data.sveglie)) {
+                    aggiornaSveglie(data.sveglie);
+                }
+            } catch (_) {
+                // Endpoint non raggiungibile: lascia i dati esistenti
+            }
+        }
+
+        // Prima lettura immediata, poi ogni 30 secondi
+        aggiornaListaSveglie();
+        setInterval(aggiornaListaSveglie, 30000);
     </script>
 </body>
 

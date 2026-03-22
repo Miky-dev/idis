@@ -37,7 +37,7 @@ from actions.tools_computer_set import esegui_azione_computer
 from actions.tools_computer_controll import controllo_avanzato_computer
 import esp32_bridge
 from automations.tools_mail import leggi_mail_importanti 
-from actions.tools_esp32_sveglia import invia_comando_sveglia, leggi_sensori_stanza
+from actions.tools_esp32_sveglia import invia_comando_sveglia, leggi_sensori_stanza, imposta_sveglia as imposta_sveglia_stark
 
 load_dotenv()
 
@@ -248,8 +248,8 @@ def _seleziona_tool(testo_lower: str) -> list:
         tutti_i_tool.extend([leggi_calendario, aggiungi_evento_calendario, elimina_evento_calendario])
 
     if any(k in testo_lower for k in ["sveglia", "timer", "promemoria", "ricordami", "avvisami",
-                                       "tra", "alle ", "minuti", "ore"]):
-        tutti_i_tool.append(imposta_sveglia)
+                                       "tra", "alle ", "minuti", "ore", "spegnila"]):
+        tutti_i_tool.extend([imposta_sveglia, imposta_sveglia_stark])
 
     if any(k in testo_lower for k in ["routine", "abitudine", "ogni giorno", "quotidiano",
                                        "aggiungi alla routine", "rimuovi dalla routine",

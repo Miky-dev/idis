@@ -114,6 +114,9 @@ class GeofencePayload(BaseModel):
     lon: float
     raggio_m: float = 200
 
+class ComandoPayload(BaseModel):
+    testo: str
+
 # ══════════════════════════════════════════════════════════════
 # UTILS GEOGRAFICI
 # ══════════════════════════════════════════════════════════════
@@ -335,6 +338,84 @@ def endpoint_imposta_casa(payload: GeofencePayload, _: None = Depends(_verifica_
     """Imposta le coordinate di casa via HTTP (usa l'app ntfy o Shortcut)."""
     imposta_casa(payload.lat, payload.lon)
     return {"ok": True, "lat": payload.lat, "lon": payload.lon}
+
+
+@app.post("/comando")
+def esegui_comando(payload: ComandoPayload, _: None = Depends(_verifica_chiave)):
+    """
+    Riceve un comando testuale (es. da iOS Shortcut / Dettatura),
+    lo passa a logica_chat.elabora_risposta e restituisce il risultato finale testuale.
+    Intercetta i callback UI per mostrarlo nella dashboard su PC se aperta.
+    """
+    import logica_chat
+    import threading
+    
+    risultato = {"testo": ""}
+    evento_fine = threading.Event()
+
+    # Callback di base per raccogliere il testo
+    def _aggiorna_testo_API(nuovo_testo):
+        risultato["testo"] = nuovo_testo
+        
+    def _set_stato_API(stato):
+        if stato == "idle":
+            evento_fine.set()
+
+    # Prendi i callback correnti (quelli della UI desktop, se già iniettati)
+    cb_originali = logica_chat._ui_callbacks_globali
+    
+    if cb_originali:
+        def _aggiungi(m, t, c=None):
+            cb_originali["aggiungi_messaggio"](m, t, c)
+            
+        def _aggiorna(nuovo_testo):
+            cb_originali["aggiorna_testo"](nuovo_testo)
+            _aggiorna_testo_API(nuovo_testo)
+            
+        def _reset_label():
+            cb_originali["reset_label"]()
+            
+        def _set_stato(stato):
+            cb_originali["set_stato"](stato)
+            _set_stato_API(stato)
+                
+        # Mostra il comando sulla dashboard PC
+        cb_originali["aggiungi_messaggio"]("📱 iPhone", payload.testo, "lightgreen")
+        
+        cb_ibridi = {
+            "aggiungi_messaggio": _aggiungi,
+            "aggiorna_testo": _aggiorna,
+            "reset_label": _reset_label,
+            "set_stato": _set_stato,
+            "_js_callback": cb_originali.get("_js_callback", lambda f, *a: None)
+        }
+    else:
+        # Nessuna UI Desktop aperta
+        cb_ibridi = {
+            "aggiungi_messaggio": lambda m,t,c=None: None,
+            "aggiorna_testo": _aggiorna_testo_API,
+            "reset_label": lambda: None,
+            "set_stato": _set_stato_API
+        }
+
+    print(f"[IPHONE] 📱 Ricevuto comando remoto: '{payload.testo}'")
+    
+    def worker():
+        try:
+            logica_chat.elabora_risposta(payload.testo, cb_ibridi)
+        finally:
+            evento_fine.set()
+            
+    threading.Thread(target=worker, daemon=True).start()
+    
+    # Aspetta che l'LLM finisca (timeout di sicurezza di 60 sec)
+    completato = evento_fine.wait(timeout=60.0)
+    
+    if not completato:
+        print("[IPHONE] ⚠️ Timeout elaborazione comando remoto.")
+        
+    print(f"[IPHONE] 📱 Risposta inviata: '{risultato['testo']}'")
+    return {"ok": True, "risposta": risultato["testo"]}
 
 
 @app.get("/ping")

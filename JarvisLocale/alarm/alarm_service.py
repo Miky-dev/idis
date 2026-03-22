@@ -15,6 +15,9 @@ scheduler = BackgroundScheduler()
 alarm_state     = {"ring": False}
 _briefing_cache = {"text": None, "wake_time": None}
 
+# Stato della sveglia impostata tramite tool (Stark Station / ESP32)
+_stark_alarm = {"ora": None, "minuto": None, "stop_ora": None, "stop_minuto": None, "abilitata": False}
+
 
 def _run_async(coro):
     """Esegue una coroutine asyncio dal BackgroundScheduler (thread sync)."""
@@ -38,6 +41,38 @@ async def check_alarm():
     return {"ring": alarm_state["ring"]}
 
 
+@router.get("/alarms/list")
+async def list_alarms():
+    """Ritorna la lista di sveglie attive per la dashboard."""
+    sveglie = []
+
+    # 1. Sveglia dal calendario (calcolata di notte da schedule_alarm_from_calendar)
+    wake_time = _briefing_cache.get("wake_time")
+    if wake_time:
+        sveglie.append({
+            "orario": wake_time.strftime("%H:%M"),
+            "messaggio": "Calendario · Domani",
+            "attiva": True,
+            "tipo": "calendario"
+        })
+
+    # 2. Sveglia impostata via tool (Stark Station ESP32)
+    if _stark_alarm["ora"] is not None:
+        ora    = str(_stark_alarm["ora"]).zfill(2)
+        minuto = str(_stark_alarm["minuto"]).zfill(2)
+        stop   = ""
+        if _stark_alarm["stop_ora"] is not None:
+            stop = f" · off {str(_stark_alarm['stop_ora']).zfill(2)}:{str(_stark_alarm['stop_minuto']).zfill(2)}"
+        sveglie.append({
+            "orario": f"{ora}:{minuto}",
+            "messaggio": f"Stark Station{stop}",
+            "attiva": bool(_stark_alarm["abilitata"]),
+            "tipo": "stark"
+        })
+
+    return {"sveglie": sveglie}
+
+
 @router.post("/alarm/test")
 async def test_alarm():
     """Triggera la sveglia tra 60 secondi per testare."""
@@ -48,6 +83,12 @@ async def test_alarm():
         run_date=datetime.now() + timedelta(seconds=5),
         id="prep_test", replace_existing=True,
         args=[prepare_briefing()]
+    )
+    scheduler.add_job(
+        _run_async, "date",
+        run_date=wake_time - timedelta(seconds=30),
+        id="alba_rossa_test", replace_existing=True,
+        args=[trigger_alba_rossa()]
     )
     scheduler.add_job(
         _run_async, "date",
@@ -89,15 +130,21 @@ async def schedule_alarm_from_calendar():
         print(f"\033[35m[ALARM] Nessun evento → sveglia default alle 09:15\033[0m")
 
     prep_time = wake_time - timedelta(minutes=20)
+    alba_rossa_time = wake_time - timedelta(minutes=10)
     _briefing_cache["wake_time"] = wake_time
 
     elapsed = time.perf_counter() - t_start
-    print(f"\033[32m[ALARM] ✓ Sveglia → {wake_time.strftime('%H:%M')} | Prep → {prep_time.strftime('%H:%M')} ({elapsed:.2f}s)\033[0m")
+    print(f"\033[32m[ALARM] ✓ Sveglia → {wake_time.strftime('%H:%M')} | Alba Rossa → {alba_rossa_time.strftime('%H:%M')} | Prep → {prep_time.strftime('%H:%M')} ({elapsed:.2f}s)\033[0m")
 
     scheduler.add_job(
         _run_async, "date", run_date=prep_time,
         id="prep", replace_existing=True,
         args=[prepare_briefing()]
+    )
+    scheduler.add_job(
+        _run_async, "date", run_date=alba_rossa_time,
+        id="alba_rossa", replace_existing=True,
+        args=[trigger_alba_rossa()]
     )
     scheduler.add_job(
         _run_async, "date", run_date=wake_time,
@@ -118,6 +165,20 @@ async def prepare_briefing():
     except Exception as e:
         print(f"\033[31m[BRIEFING] ❌ Errore: {e}\033[0m")
         _briefing_cache["text"] = None
+
+
+# ── Trigger alba rossa (T-10min) ───────────────────────────────
+
+async def trigger_alba_rossa():
+    print(f"\033[35m[ALBA ROSSA] Avvio protocollo alba rossa sulla Stark Station...\033[0m")
+    try:
+        import requests
+        import os
+        esp32_ip = os.getenv("ESP32_SVEGLIA_IP", "http://192.168.1.212")
+        requests.get(f"{esp32_ip}/rosso", timeout=5)
+        print(f"\033[32m[ALBA ROSSA] ✓ Comando inviato con successo\033[0m")
+    except Exception as e:
+        print(f"\033[31m[ALBA ROSSA] ❌ Errore di comunicazione: {e}\033[0m")
 
 
 # ── Trigger sveglia (T-0) ──────────────────────────────────────
