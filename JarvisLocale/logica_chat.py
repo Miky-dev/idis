@@ -37,8 +37,7 @@ from actions.tools_computer_set import esegui_azione_computer
 from actions.tools_computer_controll import controllo_avanzato_computer
 import esp32_bridge
 from automations.tools_mail import leggi_mail_importanti 
-from actions.tools_esp32_sveglia import invia_comando_sveglia
-
+from actions.tools_esp32_sveglia import invia_comando_sveglia, leggi_sensori_stanza
 
 load_dotenv()
 
@@ -303,8 +302,12 @@ def _seleziona_tool(testo_lower: str) -> list:
     if any(k in testo_lower for k in ["clicca", "click", "mouse", "scorciatoia", "tasto", "incolla", "copia", "screenshot", "schermata", "trova sullo", "muovi il mouse", "trascina", "seleziona tutto", "premi invio", "premi f5"]):
         tutti_i_tool.append(controllo_avanzato_computer)
 
-    if any(k in testo_lower for k in [ "accendi", "spegni", "cyberpunk", "letto","luce letto", "luci letto", "luci comodino", "modalità", "modalita", "protocollo", "alba rossa", "stark station", "spegni tutto", "letto", "comodino", "luminosità", "luminosita", "intensità", "intensita", "luce al massimo", "luce media", "luce bassa"]):
+    if any(k in testo_lower for k in [ "accendi", "spegni", "cyberpunk", "letto","luce letto", "luci letto", "luci comodino", "modalità", "modalita", "protocollo", "alba rossa", "stark station", "spegni tutto", "letto", "comodino", "luminosità", "luminosita", "intensità", "intensita", "luce al massimo", "luce media", "luce bassa", "viola", "bianco", "verde", "rosso"]):
         tutti_i_tool.append(invia_comando_sveglia)
+
+    if any(k in testo_lower for k in ["stanza", "temperatura", "umidità", "umidita", "camera", "presenza", "c'è qualcuno", "c è qualcuno", "chi c'è", "stark station"]):
+        if leggi_sensori_stanza not in tutti_i_tool:
+            tutti_i_tool.append(leggi_sensori_stanza)
 
     # Rimuovi duplicati
     visti = set()
@@ -407,7 +410,14 @@ def elabora_risposta(testo_utente: str, ui_callbacks: dict):
     testo_memoria_json = ", ".join([f"{k}: {v}" for k, v in memoria_strutturata.items()]) if memoria_strutturata else "Nessun dato personale."
 
     import actions.tools_location as tl
-    testo_contesto = f"""Oggi: {giorno_settimana} {data_odierna}. Ora: {ora_minuto}. Posizione: {tl.posizione_cache}
+    import esp32_bridge
+    stark_info = ""
+    if esp32_bridge.stark_station_data.get("temperatura") is not None:
+        stark_info = f" | Casa: {esp32_bridge.stark_station_data['temperatura']}°C, {esp32_bridge.stark_station_data['umidita']}% Umidità"
+        if esp32_bridge.stark_station_data.get("presenza"):
+            stark_info += " (Presenza rilevata)"
+
+    testo_contesto = f"""Oggi: {giorno_settimana} {data_odierna}. Ora: {ora_minuto}. Posizione: {tl.posizione_cache}{stark_info}
 MEM: {testo_memoria_json}.
 RICORDI: {testo_ricordi}
 CALENDARIO: {eventi_precaricati[:500]}""" # tronca per evitare prompt troppo lunghi

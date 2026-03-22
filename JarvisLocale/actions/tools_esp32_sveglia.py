@@ -6,18 +6,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-ESP32_IP = os.getenv("ESP32_SVEGLIA_IP", "http://192.168.1.50")
+ESP32_IP = os.getenv("ESP32_SVEGLIA_IP", "http://192.168.1.212")
 
 def verifica_connessione_sveglia():
     """Ping iniziale per verificare che la sveglia ESP32 sia online."""
     url = f"{ESP32_IP}/"
     try:
-        # Timeout breve per non bloccare il thread a lungo
-        requests.get(url, timeout=2)
+        # Timeout aumentato a 5s perché la lettura dei sensori (DHT ecc.) 
+        # sull'ESP32 può bloccare temporaneamente il web server
+        requests.get(url, timeout=5)
         print(f"✅ JARVIS connesso a Stark Station (Sveglia ESP32) su {ESP32_IP}")
         return True
-    except requests.exceptions.RequestException:
-        print(f"⚠️ Stark Station (Sveglia ESP32) non raggiungibile su {ESP32_IP}. I comandi remoti potrebbero fallire.")
+    except requests.exceptions.RequestException as e:
+        print(f"⚠️ Stark Station (Sveglia ESP32) non raggiungibile su {ESP32_IP} (Errore: {e}). I comandi remoti potrebbero fallire.")
         return False
 
 
@@ -42,8 +43,9 @@ def invia_comando_sveglia(azione: str) -> str:
         "bianca": "lavoro", "bianco": "lavoro",
         "verde": "matrix",
         "viola": "cyberpunk",
-        "rosso": "alba_rossa",
-        "rossa": "alba_rossa",
+        "rosso": "rosso",
+        "rossa": "rosso",
+        "alba_rossa": "rosso",
         "massimo": "lum_max", "massima": "lum_max", "alta": "lum_max",
         "media": "lum_media", "medio": "lum_media",
         "bassa": "lum_bassa", "minimo": "lum_bassa", "minima": "lum_bassa"
@@ -67,3 +69,24 @@ def invia_comando_sveglia(azione: str) -> str:
         print(f"JARVIS: {msg}")
         return msg
 
+@tool
+def leggi_sensori_stanza() -> str:
+    """
+    Legge i dati dei sensori (temperatura, umidità e presenza umana) nella stanza 
+    rilevati dalla Stark Station (ESP32).
+    Usa questo strumento per rispondere a domande sulla temperatura in camera, 
+    l'umidità interna o per sapere se c'è qualcuno (presenza umana).
+    """
+    import esp32_bridge
+    dati = esp32_bridge.stark_station_data
+    temp = dati.get("temperatura")
+    umid = dati.get("umidita")
+    pres = dati.get("presenza")
+    
+    if temp is None:
+        return "Non ho ancora ricevuto aggiornamenti dai sensori della Stark Station."
+    
+    str_pres = "Rilevata presenza umana" if pres else "Nessuno presente"
+    msg = f"Sensori Camera: {temp}°C, Umidità al {umid}%. {str_pres}."
+    print(f"JARVIS: {msg}")
+    return msg

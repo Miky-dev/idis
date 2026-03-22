@@ -26,6 +26,13 @@
           "fonte": "gap+schermo",
           "data": "2026-03-12"
         }
+      ],
+      "sab": [
+        {
+          "ora": "18:19",
+          "fonte": "gap+schermo",
+          "data": "2026-03-21"
+        }
       ]
     },
     "studio": {
@@ -61,6 +68,13 @@
           "fonte": "gap+calendario+schermo",
           "data": "2026-03-12"
         }
+      ],
+      "dom": [
+        {
+          "ora": "14:21",
+          "fonte": "keyword",
+          "data": "2026-03-22"
+        }
       ]
     },
     "rientro": {
@@ -69,6 +83,13 @@
           "ora": "16:44",
           "fonte": "keyword",
           "data": "2026-03-12"
+        }
+      ],
+      "dom": [
+        {
+          "ora": "14:25",
+          "fonte": "keyword",
+          "data": "2026-03-22"
         }
       ]
     },
@@ -89,8 +110,26 @@
           "data": "2026-03-17"
         }
       ]
+    },
+    "sonno": {
+      "dom": [
+        {
+          "ora": "14:14",
+          "fonte": "keyword",
+          "data": "2026-03-22"
+        }
+      ]
+    },
+    "sveglia": {
+      "dom": [
+        {
+          "ora": "14:25",
+          "fonte": "keyword",
+          "data": "2026-03-22"
+        }
+      ]
     }
   },
-  "ultimo_messaggio": "2026-03-21T15:25:56.415992",
+  "ultimo_messaggio": "2026-03-22T15:13:34.663772",
   "stabilizzazioni_notificate": []
 }

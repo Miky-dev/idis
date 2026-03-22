@@ -1,6 +1,7 @@
 import serial
 import time
 import threading
+import datetime
 from fastapi import APIRouter
 
 # ══════════════════════════════════════════════════════════════
@@ -28,6 +29,10 @@ sensor_data = {"temp": None, "humidity": None, "co2": None}
 # ── Router FastAPI ─────────────────────────────────────────────
 router = APIRouter()
 
+def _log(tag: str, msg: str):
+    ts = datetime.datetime.now().strftime("%H:%M:%S")
+    print(f"[{ts}][{tag}] {msg}")
+
 @router.post("/sensors")
 async def receive_sensors(data: dict):
     sensor_data.update(data)
@@ -37,6 +42,27 @@ async def receive_sensors(data: dict):
 async def check_alarm():
     from alarm.alarm_service import alarm_state
     return {"ring": alarm_state["ring"]}
+
+# ── Stark Station ──────────────────────────────────────────────
+stark_station_data = {
+    "temperatura": None,
+    "umidita": None,
+    "presenza": False
+}
+
+@router.post("/stark_station/sensori")
+async def stark_sensori(data: dict):
+    stark_station_data["temperatura"] = data.get("temperatura")
+    stark_station_data["umidita"] = data.get("umidita")
+    _log("STARK", f"Temp: {stark_station_data['temperatura']}°C | Umidità: {stark_station_data['umidita']}%")
+    return {"status": "ok"}
+
+@router.post("/stark_station/presenza")
+async def stark_presenza(data: dict):
+    stark_station_data["presenza"] = data.get("presenza", False)
+    stato_str = "Rilevata" if stark_station_data["presenza"] else "Nessuno"
+    _log("STARK", f"Presenza: {stato_str}")
+    return {"status": "ok"}
 
 # ══════════════════════════════════════════════════════════════
 # LOGICA SERIALE (invariata)
