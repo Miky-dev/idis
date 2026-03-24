@@ -174,8 +174,9 @@ async def trigger_alba_rossa():
     try:
         import requests
         import os
-        esp32_ip = os.getenv("ESP32_SVEGLIA_IP", "http://192.168.1.212")
-        requests.get(f"{esp32_ip}/rosso", timeout=5)
+        esp32_ip    = os.getenv("ESP32_SVEGLIA_IP", "http://192.168.1.212")
+        stark_token = os.getenv("ESP32_STARK_TOKEN", "")
+        requests.get(f"{esp32_ip}/rosso", params={"token": stark_token}, timeout=5)
         print(f"\033[32m[ALBA ROSSA] ✓ Comando inviato con successo\033[0m")
     except Exception as e:
         print(f"\033[31m[ALBA ROSSA] ❌ Errore di comunicazione: {e}\033[0m")
