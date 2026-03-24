@@ -13,3 +13,6 @@ memoria_utente.json
 # Modelli TTS Kokoro
 JarvisLocale/kokoro-v1.0.onnx
 JarvisLocale/voices*.bin
+
+# === ESP32 Firmware (contiene credenziali Wi-Fi) ===
+JarvisLocale/esp32/alarm_clock/
