@@ -14,10 +14,11 @@ from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 from langchain_ollama import ChatOllama
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 
-from agents import supervisore_routine
+from . import supervisore_routine
 
-from automations.tools_routine_learning import rileva_e_registra, mostra_profilo_routine
+from .tools_routine_learning import rileva_e_registra, mostra_profilo_routine
 from actions.tools_os import apri_applicazione
 from actions.tools_web import cerca_su_internet, apri_sito_web, digita_nel_browser
 from actions.weather_report import mostra_meteo
@@ -36,7 +37,7 @@ from actions.tools_handmouse import attiva_controllo_mano, disattiva_controllo_m
 from actions.tools_computer_set import esegui_azione_computer
 from actions.tools_computer_controll import controllo_avanzato_computer
 import esp32_bridge
-from agents.tools_mail import leggi_mail_importanti 
+from .tools_mail import leggi_mail_importanti 
 from actions.tools_esp32_sveglia import invia_comando_sveglia, leggi_sensori_stanza, imposta_sveglia as imposta_sveglia_stark
 
 load_dotenv()
@@ -54,6 +55,7 @@ except:
 llm_provider = os.getenv("LLM_PROVIDER", "ollama").lower()
 model_local = os.getenv("MODEL_LOCAL", "qwen3:8b")
 model_remote = os.getenv("MODEL_REMOTE", "gemini-2.0-flash-lite")
+model_groq = os.getenv("MODEL_GROQ", "llama-3.3-70b-versatile")
 
 THINKING_BUDGET_MAP = {"low": 1024, "medium": 8192, "high": 32768}
 thinking_budget_key = os.getenv("OLLAMA_THINKING_BUDGET", "low")
@@ -66,6 +68,13 @@ if llm_provider == "ollama":
         temperature=0.1,
         num_ctx=4096,
         extra_body={"think": True, "thinking_budget": thinking_budget},
+    )
+elif llm_provider == "groq":
+    print(f"⚡ Avvio IDIS con modello GROQ: {model_groq}")
+    llm = ChatGroq(
+        model=model_groq,
+        temperature=0.1,
+        api_key=os.getenv("GROQ_API_KEY"),
     )
 else:
     print(f"🚀 Avvio IDIS con modello REMOTO (Google): {model_remote}")
@@ -148,7 +157,7 @@ def _warmup_ollama():
 
 def carica_calendario_background():
     global eventi_precaricati
-    from agents.profilo_uscita import controlla_calendario_uscita, esegui_profilo_uscita
+    from .profilo_uscita import controlla_calendario_uscita, esegui_profilo_uscita
     if controlla_calendario_uscita(eventi_precaricati):
         threading.Thread(target=esegui_profilo_uscita, args=("",), daemon=True).start()
     try:
@@ -176,7 +185,7 @@ def avvia_background():
         supervisore_routine.inizializza({}, llm, js_callback=lambda f, *a: _ui_callbacks_globali.get("_js_callback")(f, *a) if _ui_callbacks_globali and "_js_callback" in _ui_callbacks_globali else None)
         supervisore_routine.avvia()
 
-        from agents.profilo_uscita import inizializza as init_uscita
+        from .profilo_uscita import inizializza as init_uscita
         init_uscita(
             llm         = llm,
             ui_notify   = lambda m, t: _ui_callbacks_globali["aggiungi_messaggio"](m, t, "cyan") if _ui_callbacks_globali else None,
@@ -338,16 +347,16 @@ def elabora_risposta(testo_utente: str, ui_callbacks: dict):
     global cronologia_chat
 
     # ── Aggiornamenti background (pre-LLM, zero latenza) ─────
-    from agents.tools_mail import aggiorna_silenzio
+    from .tools_mail import aggiorna_silenzio
     aggiorna_silenzio()
-    from agents import supervisore_routine
+    from . import supervisore_routine
     rileva_e_registra(testo_utente)
     supervisore_routine.aggiorna_ultimo_messaggio()
 
     # ── Intercetta conferme pendenti (learning, mail, uscita) ─
     if supervisore_routine.gestisci_conferma_learning(testo_utente.lower()): return
     if supervisore_routine.gestisci_conferma_mail(testo_utente.lower()): return
-    from agents.profilo_uscita import gestisci_messaggio as gestisci_uscita
+    from .profilo_uscita import gestisci_messaggio as gestisci_uscita
     gestisci_uscita(testo_utente)
 
     # ✅ Interrompi subito la voce se IDIS stava parlando

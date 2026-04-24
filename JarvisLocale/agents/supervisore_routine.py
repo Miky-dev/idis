@@ -93,7 +93,7 @@ def gestisci_conferma_learning(testo_lower: str) -> bool:
 
     if si:
         try:
-            from agents.tools_routine_learning import conferma_aggiunta_routine
+            from .tools_routine_learning import conferma_aggiunta_routine
             for chiave in list(_learning_in_attesa.keys()):
                 conferma_aggiunta_routine(chiave)
             _notifica("Routine aggiunta con successo.")
@@ -236,7 +236,7 @@ def _controlla_calendario():
     """Avviso 15 min prima di un evento e 30 min prima se richiede uscita. Usa UTC corretto per Google API."""
     try:
         from actions.tools_calendar import ottieni_servizio_calendario
-        from agents.profilo_uscita import _KW_EVENTI_USCITA, _parla
+        from .profilo_uscita import _KW_EVENTI_USCITA, _parla
         import urllib.parse
         import requests
 
@@ -362,7 +362,7 @@ def _controlla_mail():
     def _esegui():
         global _check_mail_in_corso, _mail_in_attesa_conferma
         try:
-            from agents.tools_mail import fetch_mail_recenti, classifica_mail_con_llm, segna_come_lette
+            from .tools_mail import fetch_mail_recenti, classifica_mail_con_llm, segna_come_lette
             _log("MAIL", "Avvio controllo inbox...")
 
             mail_list = fetch_mail_recenti(max_mail=10)
@@ -476,7 +476,7 @@ def _controlla_learning():
     if _ui_callbacks is None:
         return
     try:
-        from agents.tools_routine_learning import controlla_stabilizzazioni
+        from .tools_routine_learning import controlla_stabilizzazioni
 
         def _notifica_learning(msg: str, chiave: str):
             global _learning_in_attesa

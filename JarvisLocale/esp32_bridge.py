@@ -68,7 +68,7 @@ async def stark_presenza(data: dict):
     _log("STARK", f"Presenza: {stato_str}")
     
     try:
-        from automations.profilo_uscita import esegui_profilo_uscita, esegui_profilo_rientro
+        from agents.profilo_uscita import esegui_profilo_uscita, esegui_profilo_rientro
         
         if presenza_attuale:
             if _timer_assenza is not None:

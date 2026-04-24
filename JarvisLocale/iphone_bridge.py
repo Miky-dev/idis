@@ -347,7 +347,7 @@ def esegui_comando(payload: ComandoPayload, _: None = Depends(_verifica_chiave))
     lo passa a logica_chat.elabora_risposta e restituisce il risultato finale testuale.
     Intercetta i callback UI per mostrarlo nella dashboard su PC se aperta.
     """
-    import logica_chat
+    from agents import logica_chat
     import threading
     
     risultato = {"testo": ""}
@@ -515,7 +515,7 @@ def _monitor_calendario():
     while True:
         try:
             from actions.tools_calendar import ottieni_eventi_precaricati
-            import logica_chat as lc
+            from agents import logica_chat as lc
             eventi_testo = lc.eventi_precaricati
 
             adesso = datetime.datetime.now()
@@ -578,7 +578,7 @@ def inizializza_callbacks():
     Chiamato da avvia_background() in logica_chat.py.
     """
     try:
-        from automations.profilo_uscita import esegui_profilo_uscita, esegui_profilo_rientro
+        from agents.profilo_uscita import esegui_profilo_uscita, esegui_profilo_rientro
 
         def _on_uscita_gps():
             print("[IPHONE] GPS o Automotive: trigger uscita → profilo_uscita")

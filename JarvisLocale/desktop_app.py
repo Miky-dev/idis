@@ -4,7 +4,7 @@ Avvia la logica backend e la finestra dashboard HTML.
 """
 
 import threading
-from logica_chat import avvia_background
+from agents.logica_chat import avvia_background
 from ui_webview import avvia_ui
 
 '''llm = ChatOllama(
