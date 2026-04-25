@@ -75,6 +75,20 @@
           "fonte": "keyword",
           "data": "2026-03-22"
         }
+      ],
+      "ven": [
+        {
+          "ora": "19:30",
+          "fonte": "gap+calendario+schermo",
+          "data": "2026-04-25"
+        }
+      ],
+      "sab": [
+        {
+          "ora": "17:00",
+          "fonte": "gap+schermo",
+          "data": "2026-04-25"
+        }
       ]
     },
     "rientro": {
@@ -130,6 +144,6 @@
       ]
     }
   },
-  "ultimo_messaggio": "2026-04-24T19:30:15.218016",
+  "ultimo_messaggio": "2026-04-25T17:46:01.188067",
   "stabilizzazioni_notificate": []
 }

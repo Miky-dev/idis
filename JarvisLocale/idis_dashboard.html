@@ -1048,8 +1048,301 @@
             transition: all .2s;
         }
 
-        .chat-send:hover {
-            box-shadow: 0 0 18px rgba(62, 207, 255, .4);
+        .chat-send:hover { box-shadow: 0 0 18px rgba(62, 207, 255, .4); }
+
+        /* ══ MAIL PANEL ══ */
+        .mail-panel {
+            position: fixed; top: 0; left: -870px;
+            width: 840px; height: 100vh;
+            background: rgba(6, 10, 14, .97);
+            border-right: 1px solid var(--border-hi);
+            backdrop-filter: blur(40px);
+            z-index: 100;
+            transition: left .4s cubic-bezier(.4,0,.2,1);
+            display: flex; flex-direction: column;
+            box-shadow: 16px 0 50px rgba(0,0,0,.5);
+        }
+        .mail-panel.open { left: 0; }
+        .mail-hdr { display:flex; align-items:center; justify-content:space-between; padding:18px 20px 14px; border-bottom:1px solid var(--border); flex-shrink:0; }
+        .mail-scan-bar { height:2px; background:var(--border); overflow:hidden; flex-shrink:0; display:none; }
+        .mail-scan-bar.active { display:block; }
+        .mail-scan-bar::after { content:''; display:block; height:100%; width:25%; background:linear-gradient(90deg,transparent,var(--accent),transparent); animation:scanAnim 1.4s ease-in-out infinite; }
+        @keyframes scanAnim { 0%{transform:translateX(-100%)} 100%{transform:translateX(500%)} }
+        .mail-list { flex:1; overflow-y:auto; padding:12px 18px; display:flex; flex-direction:column; gap:9px; }
+        .mail-list::-webkit-scrollbar { width:2px; }
+        .mail-list::-webkit-scrollbar-thumb { background:var(--border-hi); }
+        .mail-card {
+            background:rgba(255,255,255,.035); border:1px solid var(--border);
+            border-radius:12px; padding:13px 15px; cursor:pointer;
+            transition:all .18s; position:relative; overflow:hidden;
+        }
+        .mail-card:hover { border-color:var(--border-hi); background:rgba(62,207,255,.05); transform:translateX(3px); }
+        .mail-card.unread::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:linear-gradient(180deg,var(--accent),var(--accent2)); border-radius:3px 0 0 3px; }
+        .mail-card-top { display:flex; align-items:center; gap:7px; margin-bottom:7px; }
+        .mail-emoji { font-size:17px; }
+        .mail-oggetto { font-size:12.5px; font-weight:500; color:var(--text); margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .mail-meta { font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--text-faint); margin-bottom:5px; }
+        .mail-riassunto { font-size:11px; color:var(--text-dim); line-height:1.4; }
+        .mpill { font-family:'JetBrains Mono',monospace; font-size:8px; padding:2px 7px; border-radius:4px; letter-spacing:.05em; }
+        .mpill-alta   { background:rgba(255,79,106,.13); color:var(--danger); border:1px solid rgba(255,79,106,.25); }
+        .mpill-media  { background:rgba(255,179,71,.13); color:var(--warm);   border:1px solid rgba(255,179,71,.25); }
+        .mpill-bassa  { background:rgba(255,255,255,.05); color:var(--text-faint); border:1px solid var(--border); }
+        .mpill-cat    { background:rgba(62,207,255,.1); color:var(--accent); border:1px solid rgba(62,207,255,.2); }
+        .mail-empty, .mail-loading { text-align:center; padding:50px 20px; color:var(--text-faint); font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:.1em; }
+        .mail-loading { animation:pulse 1.5s ease infinite; }
+        /* Badge sul bottone */
+        .mail-btn-wrap { position:relative; }
+        .mail-badge { position:absolute; top:-5px; right:-5px; min-width:16px; height:16px; background:var(--danger); border-radius:8px; font-size:9px; font-family:'JetBrains Mono',monospace; color:#fff; display:none; align-items:center; justify-content:center; padding:0 4px; }
+        /* DETAIL OVERLAY */
+        .mail-detail-overlay {
+            position:fixed; inset:0; z-index:200;
+            background:rgba(0,0,0,.65); backdrop-filter:blur(6px);
+            opacity:0; pointer-events:none; transition:opacity .3s;
+            display:flex; align-items:center; justify-content:center; padding:32px;
+        }
+        .mail-detail-overlay.open { opacity:1; pointer-events:all; }
+        .mail-detail-card {
+            background:rgba(8,12,18,.98); border:1px solid var(--border-hi);
+            border-radius:18px; width:100%; max-width:720px; max-height:82vh;
+            display:flex; flex-direction:column;
+            box-shadow:0 24px 80px rgba(0,0,0,.8);
+            animation:fadeUp .3s ease both;
+        }
+        .mail-detail-hdr { padding:20px 24px; border-bottom:1px solid var(--border); display:flex; align-items:flex-start; gap:14px; flex-shrink:0; }
+        .mail-detail-emoji { font-size:26px; flex-shrink:0; padding-top:2px; }
+        .mail-detail-info { flex:1; min-width:0; }
+        .mail-detail-oggetto { font-size:15px; font-weight:500; color:var(--text); margin-bottom:7px; }
+        .mail-detail-meta-row { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+        .mail-detail-from { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--accent); }
+        .mail-detail-date { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-faint); }
+        .mail-detail-close { background:none; border:1px solid var(--border); border-radius:8px; color:var(--text-dim); font-size:14px; cursor:pointer; padding:6px 12px; flex-shrink:0; transition:all .2s; }
+        .mail-detail-close:hover { border-color:var(--border-hi); color:var(--text); }
+        .mail-detail-body { flex:1; overflow-y:auto; padding:22px 24px; font-size:13px; line-height:1.75; color:var(--text); white-space:pre-wrap; -webkit-user-select:text!important; user-select:text!important; }
+        .mail-detail-body::-webkit-scrollbar { width:2px; }
+        .mail-detail-body::-webkit-scrollbar-thumb { background:var(--border-hi); }
+
+        /* ══ PANNELLO CAMERA — AR OVERLAY ══ */
+        .light-control-panel {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+        }
+
+        .light-control-panel.open {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        /* Sfondo camera: switcha in base all'orario tramite JS */
+        .light-control-bg {
+            position: absolute;
+            inset: 0;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            background-color: #000;
+            z-index: 0;
+            transition: background-image 0.8s ease;
+        }
+
+        /* Varianti sfondo per fascia oraria */
+        .light-control-bg.bg-giorno        { background-image: url('bedroom_background-giorno.png'); }
+        .light-control-bg.bg-mattina-sera  { background-image: url('bedroom_background-mattina-sera.png'); }
+        .light-control-bg.bg-notte-acceso  { background-image: url('bedroom_background-notte-acceso.png'); }
+        .light-control-bg.bg-notte-spento  { background-image: url('bedroom_background-notte-spento.png'); }
+
+        /* Vignette ai bordi */
+        .light-control-bg::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(ellipse 90% 85% at 50% 50%, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.65) 100%);
+        }
+
+        /* Bottone chiudi in alto a destra */
+        .lcp-close {
+            position: absolute;
+            top: 20px;
+            right: 24px;
+            z-index: 10;
+            background: rgba(0,0,0,0.55);
+            border: 1px solid rgba(62,207,255,0.3);
+            border-radius: 50%;
+            width: 38px;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--accent);
+            font-size: 16px;
+            cursor: pointer;
+            transition: all .2s;
+            backdrop-filter: blur(8px);
+        }
+        .lcp-close:hover { background: rgba(62,207,255,0.18); box-shadow: 0 0 16px rgba(62,207,255,.3); }
+
+        /* Label titolo in alto a sinistra */
+        .lcp-title {
+            position: absolute;
+            top: 22px;
+            left: 24px;
+            z-index: 10;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            letter-spacing: .2em;
+            color: var(--accent);
+            text-shadow: 0 0 18px rgba(62,207,255,.8);
+            background: rgba(0,0,0,0.4);
+            padding: 6px 14px;
+            border-radius: 8px;
+            border: 1px solid rgba(62,207,255,.2);
+            backdrop-filter: blur(8px);
+        }
+
+        /* Widget posizionati sulla parete (zona destra/centro-alta) */
+        /* L'immagine è isometrica, la parete di destra occupa aprox:
+           x: 45%–92%, y: 8%–62% dell'immagine */
+        .ar-widget {
+            position: absolute;
+            z-index: 5;
+            background: rgba(10, 14, 20, 0.62);
+            border: 1px solid rgba(62, 207, 255, 0.28);
+            border-radius: 14px;
+            backdrop-filter: blur(16px) saturate(160%);
+            box-shadow: 0 4px 30px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04) inset;
+            padding: 14px 18px;
+            animation: arFadeIn .5s ease both;
+        }
+
+        @keyframes arFadeIn {
+            from { opacity: 0; transform: scale(0.94); }
+            to   { opacity: 1; transform: scale(1); }
+        }
+
+        /* Connettore AR — linea tratteggiata dal widget al punto sulla parete */
+        .ar-widget::before {
+            content: '';
+            position: absolute;
+            width: 36px;
+            height: 1px;
+            background: linear-gradient(90deg, rgba(62,207,255,0.7), transparent);
+            top: 50%;
+            right: -36px;
+            transform: translateY(-50%);
+        }
+
+        .ar-widget-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 8px;
+            letter-spacing: .18em;
+            color: rgba(62,207,255,.55);
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+
+        /* 
+         * Posizioni calibrate sull'immagine isometrica (1035x777).
+         * La parete beige destra occupa circa x:47%-88%, y:8%-58%.
+         * Con viewport 1200x800 e contain: immagine 1066x800, offset X: 67px.
+         * Mappa: right% = (1200 - vpx) / 1200 * 100
+         *        top%  = vpy / 800 * 100
+         *
+         * PARETE ALTA (sopra cassettone): vp_x 580-940, vp_y 65-280
+         *   right:  22%-51%  |  top: 8%-35%
+         *
+         * CONTROLLO LUCI: al centro della parete
+         * TEMP/HUM/AIR: colonna verticale sulla destra della parete
+         */
+        .ar-temp   { top: 10%; right: 5%; }    /* parete alta, estrema destra */
+        .ar-hum    { top: 29%; right: 5%; }    /* parete media destra */
+        .ar-air    { top: 48%; right: 5%; }    /* parete bassa destra, sopra cassettone */
+        .ar-lights {
+            top: 50%;
+            left: 38%;
+            transform: translateY(-50%);
+        }
+
+        /* Connettore AR: punta a SINISTRA verso la parete */
+        .ar-widget::before {
+            content: '';
+            position: absolute;
+            width: 28px;
+            height: 1px;
+            background: linear-gradient(270deg, rgba(62,207,255,0.8), transparent);
+            top: 50%;
+            left: -28px;
+            right: auto;
+            transform: translateY(-50%);
+        }
+
+        /* Piccolo dot-indicatore sull'angolo top-left del widget */
+        .ar-widget::after {
+            content: '';
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background: var(--accent);
+            box-shadow: 0 0 8px var(--accent);
+            top: -2px;
+            left: -2px;
+        }
+
+        .ar-big-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 32px;
+            font-weight: 200;
+            color: var(--text);
+            line-height: 1;
+            letter-spacing: -1px;
+        }
+        .ar-big-val sup { font-size: 13px; vertical-align: super; opacity: .7; }
+        .ar-sub {
+            font-size: 10px;
+            color: var(--text-dim);
+            margin-top: 4px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .ar-dot-live {
+            width: 5px; height: 5px;
+            border-radius: 50%;
+            background: var(--accent3);
+            animation: pulse 1.5s ease infinite;
+            flex-shrink: 0;
+        }
+
+        /* Luci widget */
+        .ar-light-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            min-width: 180px;
+        }
+        .ar-light-name {
+            font-size: 13px;
+            color: var(--text);
+        }
+        .ar-light-state {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            color: var(--text-faint);
+            margin-top: 2px;
+        }
+        .ar-light-state.on { color: var(--warm); }
+
+        /* Toggle già esistente — riutilizzato */
+        .light-icon {
+            font-size: 24px;
+            transition: filter .3s;
+        }
+        .light-icon.on {
+            filter: drop-shadow(0 0 12px var(--warm));
         }
     </style>
 </head>
@@ -1072,6 +1365,11 @@
                 <div id="date-lbl">caricamento...</div>
             </div>
             <div class="header-right">
+                <div class="btn-mic" title="Ricarica pagina" onclick="window.location.reload()" style="font-size:14px;" id="btn-reload">↺</div>
+                <div class="mail-btn-wrap">
+                    <div class="btn-chat" onclick="apriMail()" style="gap:6px;">📧 MAIL</div>
+                    <span class="mail-badge" id="mailBadge">0</span>
+                </div>
                 <div class="btn-mic">🎙</div>
                 <div class="btn-chat" onclick="apriChat()">◧ CHAT</div>
             </div>
@@ -1250,10 +1548,46 @@
                 <div class="chip" onclick="chip('metti musica')">🎵 Musica</div>
                 <div class="chip" onclick="chip('cosa ho oggi?')">📅 Oggi</div>
                 <div class="chip" onclick="chip('spegni la luce')">💡 Luce</div>
+                <div class="chip" onclick="apriControlloLuci()" style="border-color:var(--accent); color:var(--accent);">🎛 Stark Control</div>
             </div>
             <div class="footer-r" id="lastUpd">AGG. --:--</div>
         </footer>
 
+    </div>
+
+    <!-- MAIL PANEL -->
+    <div class="mail-panel" id="mailPanel">
+        <div class="mail-hdr">
+            <div class="chat-title">// MAIL IMPORTANTI</div>
+            <div style="display:flex;gap:8px;align-items:center">
+                <div class="btn-mic" title="Aggiorna" onclick="caricaMail()" style="font-size:13px;">&#8635;</div>
+                <button class="chat-x" onclick="chiudiMail()">✕</button>
+            </div>
+        </div>
+        <div class="mail-scan-bar" id="mailScanBar"></div>
+        <div class="mail-list" id="mailList">
+            <div class="mail-empty">// PREMI &#8635; PER CARICARE LE MAIL</div>
+        </div>
+    </div>
+
+    <!-- MAIL DETAIL OVERLAY -->
+    <div class="mail-detail-overlay" id="mailDetailOverlay" onclick="chiudiMailDetail()">
+        <div class="mail-detail-card" onclick="event.stopPropagation()">
+            <div class="mail-detail-hdr">
+                <span class="mail-detail-emoji" id="mailDetailEmoji">📧</span>
+                <div class="mail-detail-info">
+                    <div class="mail-detail-oggetto" id="mailDetailOggetto"></div>
+                    <div class="mail-detail-meta-row">
+                        <span class="mail-detail-from" id="mailDetailFrom"></span>
+                        <span class="mail-detail-date" id="mailDetailDate"></span>
+                        <span class="mpill mpill-cat" id="mailDetailCat"></span>
+                        <span class="mpill" id="mailDetailPrio"></span>
+                    </div>
+                </div>
+                <button class="mail-detail-close" onclick="chiudiMailDetail()">✕</button>
+            </div>
+            <div class="mail-detail-body" id="mailDetailBody"></div>
+        </div>
     </div>
 
     <!-- CHAT PANEL -->
@@ -1272,7 +1606,260 @@
         </div>
     </div>
 
+    <!-- OVERLAY CAMERA — AR LIGHT CONTROL -->
+    <div class="light-control-panel" id="lightControlPanel">
+
+        <!-- Sfondo camera: classe cambiata da JS in base all'orario -->
+        <div class="light-control-bg" id="bedroomBg"></div>
+
+        <!-- Header -->
+        <div class="lcp-title">⌖ IDIS · STARK STATION · CAMERA</div>
+        <div class="lcp-close" onclick="chiudiControlloLuci()">✕</div>
+
+        <!-- AR WIDGET: Temperatura — parete destra alta -->
+        <div class="ar-widget ar-temp">
+            <div class="ar-widget-label">🌡 Temperatura</div>
+            <div class="ar-big-val" id="starkTemp">--<sup>°C</sup></div>
+            <div class="ar-sub"><span class="ar-dot-live"></span> Stark Station · LIVE</div>
+        </div>
+
+        <!-- AR WIDGET: Umidità -->
+        <div class="ar-widget ar-hum">
+            <div class="ar-widget-label">💧 Umidità</div>
+            <div class="ar-big-val" id="starkHum">--<sup>%</sup></div>
+            <div class="ar-sub"><span class="ar-dot-live"></span> Stark Station · LIVE</div>
+        </div>
+
+        <!-- AR WIDGET: Qualità Aria -->
+        <div class="ar-widget ar-air">
+            <div class="ar-widget-label">🌬 Qualità Aria</div>
+            <div class="ar-big-val" style="font-size:22px" id="starkAir">--</div>
+            <div class="ar-sub"><span class="ar-dot-live"></span> CO₂ / VOC · LIVE</div>
+        </div>
+
+        <!-- AR WIDGET: Luci Camera -->
+        <div class="ar-widget ar-lights">
+            <div class="ar-widget-label">💡 Luci Camera</div>
+            <div class="ar-light-row">
+                <div>
+                    <div class="ar-light-name">Luce Principale</div>
+                    <div class="ar-light-state" id="roomLightState">SPENTA</div>
+                </div>
+                <div>
+                    <div class="light-icon" id="roomLightIcon">💡</div>
+                </div>
+                <div class="toggle off" id="roomLightToggle" onclick="toggleRoomLight()"></div>
+            </div>
+        </div>
+
+    </div>
+
     <script>
+        // ══ SFONDO CAMERA: SWITCH PER FASCIA ORARIA ══
+        // Fasce:
+        //   Giorno       10:00 – 17:00
+        //   Mattina/Sera 06:00 – 09:59 e 17:01 – 20:30
+        //   Notte        20:31 – 05:59
+        // Di notte: notte-acceso se luce è ON, notte-spento altrimenti
+        // ══ MAIL LOGIC ══
+        let _mailData = [];
+
+        function apriMail() {
+            document.getElementById('mailPanel').classList.add('open');
+            document.getElementById('overlay').classList.add('show');
+            if (_mailData.length === 0) caricaMail();
+        }
+
+        function chiudiMail() {
+            document.getElementById('mailPanel').classList.remove('open');
+            document.getElementById('overlay').classList.remove('show');
+        }
+
+        function caricaMail() {
+            const list = document.getElementById('mailList');
+            const scan = document.getElementById('mailScanBar');
+            list.innerHTML = '<div class="mail-loading">// SCANSIONE SERVER IN CORSO...</div>';
+            scan.classList.add('active');
+
+            if (typeof window.pywebview !== 'undefined') {
+                window.pywebview.api.get_important_mails().then(res => {
+                    scan.classList.remove('active');
+                    if (res && res.length > 0) {
+                        _mailData = res;
+                        renderMailList(res);
+                        aggiornaMailBadge(res.filter(m => !m.letta).length);
+                    } else {
+                        list.innerHTML = '<div class="mail-empty">// NESSUNA MAIL IMPORTANTE TROVATA</div>';
+                        aggiornaMailBadge(0);
+                    }
+                }).catch(err => {
+                    scan.classList.remove('active');
+                    list.innerHTML = '<div class="mail-empty">// ERRORE DURANTE LA SCANSIONE</div>';
+                });
+            } else {
+                // Mock data for testing
+                setTimeout(() => {
+                    scan.classList.remove('active');
+                    _mailData = [
+                        { id: 1, oggetto: "Contratto Progetto X", mittente: "avvocato@studio.it", data: "Oggi, 14:20", riassunto: "Gentile cliente, in allegato il contratto firmato...", body: "Corpo completo della mail del contratto...", priorita: "alta", categoria: "Lavoro", emoji: "⚖️", letta: false },
+                        { id: 2, oggetto: "Conferma Prenotazione", mittente: "booking@hotel.com", data: "Ieri, 10:15", riassunto: "La tua camera è pronta per il check-in...", body: "Dettagli completi della prenotazione...", priorita: "media", categoria: "Viaggi", emoji: "🏨", letta: true }
+                    ];
+                    renderMailList(_mailData);
+                    aggiornaMailBadge(1);
+                }, 1500);
+            }
+        }
+
+        function renderMailList(mails) {
+            const list = document.getElementById('mailList');
+            list.innerHTML = '';
+            mails.forEach(m => {
+                const card = document.createElement('div');
+                card.className = `mail-card ${m.letta ? '' : 'unread'}`;
+                card.onclick = () => apriMailDetail(m.id);
+                
+                const prioClass = m.priorita === 'alta' ? 'mpill-alta' : (m.priorita === 'media' ? 'mpill-media' : 'mpill-bassa');
+                
+                card.innerHTML = `
+                    <div class="mail-card-top">
+                        <span class="mail-emoji">${m.emoji || '📧'}</span>
+                        <div style="flex:1">
+                            <div class="mail-oggetto">${m.oggetto}</div>
+                            <div class="mail-meta">${m.mittente} · ${m.data}</div>
+                        </div>
+                        <span class="mpill ${prioClass}">${m.priorita.toUpperCase()}</span>
+                    </div>
+                    <div class="mail-riassunto">${m.riassunto}</div>
+                `;
+                list.appendChild(card);
+            });
+        }
+
+        function aggiornaMailBadge(count) {
+            const badge = document.getElementById('mailBadge');
+            if (count > 0) {
+                badge.textContent = count;
+                badge.style.display = 'flex';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        function apriMailDetail(id) {
+            const mail = _mailData.find(m => m.id === id);
+            if (!mail) return;
+
+            document.getElementById('mailDetailEmoji').textContent = mail.emoji || '📧';
+            document.getElementById('mailDetailOggetto').textContent = mail.oggetto;
+            document.getElementById('mailDetailFrom').textContent = mail.mittente;
+            document.getElementById('mailDetailDate').textContent = mail.data;
+            document.getElementById('mailDetailCat').textContent = mail.categoria || 'Generale';
+            
+            const prioEl = document.getElementById('mailDetailPrio');
+            prioEl.textContent = mail.priorita.toUpperCase();
+            prioEl.className = `mpill ${mail.priorita === 'alta' ? 'mpill-alta' : (mail.priorita === 'media' ? 'mpill-media' : 'mpill-bassa')}`;
+            
+            document.getElementById('mailDetailBody').textContent = mail.body;
+            document.getElementById('mailDetailOverlay').classList.add('open');
+
+            // Segna come letta (opzionale, per UI)
+            if (!mail.letta) {
+                mail.letta = true;
+                renderMailList(_mailData);
+                aggiornaMailBadge(_mailData.filter(m => !m.letta).length);
+            }
+        }
+
+        function chiudiMailDetail() {
+            document.getElementById('mailDetailOverlay').classList.remove('open');
+        }
+
+        function aggiornaSfondoCamera() {
+            const bg = document.getElementById('bedroomBg');
+            if (!bg) return;
+
+            const h = new Date().getHours();
+            const m = new Date().getMinutes();
+            const hm = h * 60 + m; // minuti dall'inizio del giorno
+
+            // Minuti soglia
+            const GIORNO_START = 10 * 60;       // 600
+            const GIORNO_END   = 17 * 60;       // 1020
+            const MATT_START   = 6  * 60;       // 360
+            const SERA_END     = 20 * 60 + 30;  // 1230
+
+            const lucceAccese = !document.getElementById('roomLightToggle').classList.contains('off');
+
+            let nuovaClasse;
+            if (hm >= GIORNO_START && hm <= GIORNO_END) {
+                nuovaClasse = 'bg-giorno';
+            } else if ((hm >= MATT_START && hm < GIORNO_START) || (hm > GIORNO_END && hm <= SERA_END)) {
+                nuovaClasse = 'bg-mattina-sera';
+            } else {
+                // Notte: 20:31–05:59
+                nuovaClasse = lucceAccese ? 'bg-notte-acceso' : 'bg-notte-spento';
+            }
+
+            // Rimuovi tutte le classi bg e applica quella corretta
+            bg.classList.remove('bg-giorno', 'bg-mattina-sera', 'bg-notte-acceso', 'bg-notte-spento');
+            bg.classList.add(nuovaClasse);
+        }
+
+        function apriControlloLuci() {
+            document.getElementById('lightControlPanel').classList.add('open');
+            aggiornaSfondoCamera();
+            // Init dati stark al primo avvio
+            const t = document.getElementById('starkTemp');
+            if (t.innerText.startsWith('--')) aggiornaStark();
+        }
+
+        function chiudiControlloLuci() {
+            document.getElementById('lightControlPanel').classList.remove('open');
+        }
+
+        function toggleRoomLight() {
+            const toggle = document.getElementById('roomLightToggle');
+            const icon   = document.getElementById('roomLightIcon');
+            const state  = document.getElementById('roomLightState');
+
+            if (toggle.classList.contains('off')) {
+                toggle.classList.remove('off');
+                icon.classList.add('on');
+                state.classList.add('on');
+                state.textContent = 'ACCESA';
+                if (typeof window.pywebview !== 'undefined')
+                    window.pywebview.api.invia_messaggio('accendi la luce');
+            } else {
+                toggle.classList.add('off');
+                icon.classList.remove('on');
+                state.classList.remove('on');
+                state.textContent = 'SPENTA';
+                if (typeof window.pywebview !== 'undefined')
+                    window.pywebview.api.invia_messaggio('spegni la luce');
+            }
+            // Aggiorna sfondo (notte: cambia tra acceso/spento)
+            aggiornaSfondoCamera();
+        }
+
+        function aggiornaStark() {
+            const temp   = (21.5 + Math.random() * 1.5).toFixed(1);
+            const hum    = Math.floor(42 + Math.random() * 8);
+            const airVal = Math.floor(380 + Math.random() * 40);
+            const airLbl = airVal < 400 ? 'Ottima' : airVal < 440 ? 'Buona' : 'Discreta';
+            document.getElementById('starkTemp').innerHTML = `${temp}<sup>°C</sup>`;
+            document.getElementById('starkHum').innerHTML  = `${hum}<sup>%</sup>`;
+            document.getElementById('starkAir').textContent = airLbl;
+        }
+
+        // Aggiorna stark ogni 5s se pannello aperto
+        setInterval(() => {
+            if (document.getElementById('lightControlPanel').classList.contains('open'))
+                aggiornaStark();
+        }, 5000);
+
+        // Aggiorna sfondo ogni minuto (cambio automatico fascia oraria)
+        setInterval(aggiornaSfondoCamera, 60000);
+
         // OROLOGIO
         function tick() {
             const n = new Date(), p = x => String(x).padStart(2, '0');
@@ -1398,7 +1985,11 @@
 
         // CHAT
         function apriChat() { document.getElementById('chatPanel').classList.add('open'); document.getElementById('overlay').classList.add('show'); setTimeout(() => document.getElementById('chatInp').focus(), 420); }
-        function chiudiChat() { document.getElementById('chatPanel').classList.remove('open'); document.getElementById('overlay').classList.remove('show'); }
+        function chiudiChat() {
+            document.getElementById('chatPanel').classList.remove('open');
+            document.getElementById('mailPanel').classList.remove('open');
+            document.getElementById('overlay').classList.remove('show');
+        }
         function inviaMsg() {
             const inp = document.getElementById('chatInp'), txt = inp.value.trim(); if (!txt) return; inp.value = '';
             const msgs = document.getElementById('chatMsgs');

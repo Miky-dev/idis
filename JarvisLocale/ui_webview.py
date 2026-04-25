@@ -22,6 +22,7 @@ import psutil
 from tools_memory import leggi_memoria
 from tools_routine import ottieni_sveglie_attive
 import esp32_bridge
+import agents.tools_mail as tools_mail
 
 
 # ══════════════════════════════════════════════════════════════
@@ -98,6 +99,53 @@ class IDISApi:
 
     def get_stato_led(self) -> str:
         return "N/C"
+
+    def get_important_mails(self) -> list:
+        """
+        Recupera le mail importanti usando il modulo tools_mail.
+        Chiamata da JS quando l'utente apre il pannello mail o preme refresh.
+        """
+        try:
+            print("[API] Recupero mail importanti...")
+            # 1. Fetch mail recenti non lette (max 15 per velocità UI)
+            mail_raw = tools_mail.fetch_mail_recenti(max_mail=15)
+            if not mail_raw:
+                return []
+
+            # 2. Classificazione LLM
+            from agents.logica_chat import llm as _llm
+            classificate = tools_mail.classifica_mail_con_llm(mail_raw, _llm)
+            
+            if not classificate:
+                return []
+
+            # 3. Arricchisci con il corpo completo (per la visualizzazione dettaglio)
+            # e formatta per la dashboard
+            finali = []
+            for c in classificate:
+                # Trova la mail originale per recuperare il corpo completo (corpo)
+                orig = next((m for m in mail_raw if m['id'] == c['mail_id']), None)
+                body_full = orig['corpo'] if orig else "Contenuto non disponibile."
+                
+                finali.append({
+                    "id":        c['mail_id'],
+                    "oggetto":   c.get('oggetto', 'Senza oggetto'),
+                    "mittente":  c.get('mittente', 'Sconosciuto'),
+                    "data":      c.get('data_estratta') or orig.get('data', 'N/D') if orig else 'N/D',
+                    "riassunto": c.get('riassunto', ''),
+                    "body":      body_full,
+                    "priorita":  c.get('priorita', 'bassa'),
+                    "categoria": c.get('categoria', 'Altro'),
+                    "emoji":     c.get('emoji', '📧'),
+                    "letta":     False
+                })
+            
+            print(f"[API] Restituisco {len(finali)} mail classificate.")
+            return finali
+
+        except Exception as e:
+            print(f"[API] Errore get_important_mails: {e}")
+            return []
 
     def reset_chat(self) -> None:
         """Azzera la cronologia chat."""
