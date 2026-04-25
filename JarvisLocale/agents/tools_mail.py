@@ -10,7 +10,12 @@ import re
 import time
 import datetime
 import threading
-from langchain_core.tools import tool
+try:
+    from langchain_core.tools import tool
+except ImportError:
+    # Fallback per ambienti senza langchain_core
+    def tool(f):
+        return f
 
 SCOPES = [
     'https://www.googleapis.com/auth/calendar.events',

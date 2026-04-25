@@ -15,9 +15,14 @@ import re
 import os
 import esp32_bridge
 
-import sounddevice as sd
-import numpy as np
-from kokoro_onnx import Kokoro
+try:
+    import sounddevice as sd
+    import numpy as np
+    from kokoro_onnx import Kokoro
+    _DEPENDENCIES_OK = True
+except ImportError as e:
+    print(f"⚠️ Dipendenze TTS mancanti: {e}")
+    _DEPENDENCIES_OK = False
 
 # ── Path assoluti ────────────────────────────────────────────────────────────
 _BASE_DIR    = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -35,7 +40,7 @@ _SEPARATORI = re.compile(r'(?<=[.!?;:])\s+')
 _MIN_CHARS_VIRGOLA = 20   # flush su virgola solo se buffer >= N chars
 
 # ── Stato globale ────────────────────────────────────────────────────────────
-_kokoro: Kokoro | None = None
+_kokoro: "Kokoro" | None = None
 _kokoro_lock           = threading.Lock()
 _tts_abilitato         = True
 
@@ -52,6 +57,10 @@ _session_id:           int = 0
 
 def _carica_kokoro() -> None:
     global _kokoro, _tts_abilitato
+    if not _DEPENDENCIES_OK:
+        _tts_abilitato = False
+        return
+
     try:
         print(f"⏳ Caricamento Kokoro TTS...")
         _kokoro = Kokoro(_ONNX_PATH, _VOICES_PATH)
@@ -65,7 +74,7 @@ def _carica_kokoro() -> None:
         _tts_abilitato = False
 
 
-def _get_kokoro() -> "Kokoro | None":
+def _get_kokoro() -> "Kokoro" | None:
     global _kokoro
     if _kokoro is None and _tts_abilitato:
         with _kokoro_lock:
@@ -158,8 +167,8 @@ def _worker_riproduzione(session_id: int):
         samples, rate = item
         try:
             esp32_bridge.set_ai_state("speaking")
-            sd.play(samples, rate)
-            sd.wait()
+            if _DEPENDENCIES_OK: sd.play(samples, rate)
+            if _DEPENDENCIES_OK: sd.wait()
         except Exception as e:
             print(f"[TTS] Errore riproduzione: {e}")
             esp32_bridge.set_ai_state("idle")
@@ -281,8 +290,8 @@ def parla(testo: str, bloccante: bool = False) -> None:
                                            speed=VELOCITA_DEFAULT, lang=LINGUA)
             if not _stop_event.is_set():
                 esp32_bridge.set_ai_state("speaking")
-                sd.play(samples, rate)
-                sd.wait()
+                if _DEPENDENCIES_OK: sd.play(samples, rate)
+                if _DEPENDENCIES_OK: sd.wait()
                 esp32_bridge.set_ai_state("idle")
         except Exception as e:
             print(f"[TTS] Errore: {e}")
@@ -300,7 +309,7 @@ def ferma() -> None:
     _stop_event.set()
     _buffer_chunk = ""
     try:
-        sd.stop()
+        if _DEPENDENCIES_OK: sd.stop()
         esp32_bridge.set_ai_state("idle")
     except Exception:
         pass

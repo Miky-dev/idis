@@ -1,4 +1,7 @@
-import chromadb
+try:
+    import chromadb
+except ImportError:
+    chromadb = None
 import requests
 import uuid
 import time

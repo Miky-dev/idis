@@ -542,7 +542,12 @@ def conferma_aggiunta_routine(chiave: str):
 # TOOL LANGCHAIN — consultazione profilo
 # ══════════════════════════════════════════════════════════════
 
-from langchain_core.tools import tool
+try:
+    from langchain_core.tools import tool
+except ImportError:
+    # Fallback per ambienti senza langchain_core
+    def tool(f):
+        return f
 
 @tool
 def mostra_profilo_routine(giorno: str = "oggi") -> str:

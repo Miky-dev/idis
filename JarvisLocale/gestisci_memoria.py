@@ -3,7 +3,11 @@
 #             .\venv\Scripts\python.exe gestisci_memoria.py
 
 
-import chromadb
+try:
+    import chromadb
+except ImportError:
+    print("❌ Errore: chromadb non installato. Usa il venv!")
+    exit(1)
 
 # Connessione al database (stesso percorso usato dall'app)
 chroma_client = chromadb.PersistentClient(path="./chroma_db")
