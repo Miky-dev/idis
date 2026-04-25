@@ -22,6 +22,7 @@ import threading
 import time
 import datetime
 import re
+from langchain_core.messages import HumanMessage
 
 # ══════════════════════════════════════════════════════════════
 # LOGGING STRUTTURATO
@@ -362,7 +363,6 @@ def _rientro_step_benvenuto(durata_str: str):
 
         if _llm_ref:
             try:
-                from langchain_core.messages import HumanMessage
                 prompt = (
                     f"L'utente è appena rientrato a casa dopo essere stato fuori per {durata_str}. " if durata_str else "L'utente è appena rientrato a casa. "
                 ) + "Dai un caloroso e breve bentornato a voce, con una frase ben strutturata e naturale. Non usare emoji o caratteri speciali."

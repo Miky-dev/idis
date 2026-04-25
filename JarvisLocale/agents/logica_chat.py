@@ -62,7 +62,7 @@ thinking_budget_key = os.getenv("OLLAMA_THINKING_BUDGET", "low")
 thinking_budget = THINKING_BUDGET_MAP.get(thinking_budget_key, 1024)
 
 if llm_provider == "ollama":
-    print(f"⚡ Avvio IDIS con modello LOCALE: {model_local} [think budget: {thinking_budget_key}]")
+    print(f"Avvio IDIS con modello LOCALE: {model_local} [think budget: {thinking_budget_key}]")
     llm = ChatOllama(
         model=model_local,
         temperature=0.1,
@@ -70,14 +70,14 @@ if llm_provider == "ollama":
         extra_body={"think": True, "thinking_budget": thinking_budget},
     )
 elif llm_provider == "groq":
-    print(f"⚡ Avvio IDIS con modello GROQ: {model_groq}")
+    print(f"Avvio IDIS con modello GROQ: {model_groq}")
     llm = ChatGroq(
         model=model_groq,
         temperature=0.1,
         api_key=os.getenv("GROQ_API_KEY"),
     )
 else:
-    print(f"🚀 Avvio IDIS con modello REMOTO (Google): {model_remote}")
+    print(f"Avvio IDIS con modello REMOTO (Google): {model_remote}")
     llm = ChatGoogleGenerativeAI(model=model_remote)
 
 # ✅ [OPT] llm_veloce ora punta alla stessa istanza per evitare switch di contesto Ollama inutili.
@@ -95,7 +95,7 @@ _bind_cache[_bind_cache_default_key] = llm_default
 
 # ✅ [OPT] Prompt Statico per favorire il KV Caching di Ollama
 # Il grosso del prompt (regole e identità) deve rimanere INVARIATO tra le sessioni.
-SYSTEM_PROMPT_STATICO = """Ti chiami IDIS, un assistente IA avanzato.
+SYSTEM_PROMPT_STATICO = """Ti chiami IDIS, un assistente IA avanzato. hai un carattere socievole e simpatico, molto colto e preciso, ma estremamente brutale e diretto. Esprimi sempre le tue opinioni, anche quelle negative, senza peli sulla lingua. non censurarti e non preoccuparti di offendere o turbare l'interlocutore.
 REGOLE CRITICHE ASSOLUTE:
 1. VELOCITÀ: Rispondi il più velocemente possibile, non perdere tempo a pensare.
 2. NON USARE EMOJI O CARATTERI SPECIALI.

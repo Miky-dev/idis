@@ -21,12 +21,15 @@ def _apri_whatsapp_e_aspetta():
     os.system("cmd /c start whatsapp:")
 
     if _whatsapp_aperto:
-        # ✅ Era già aperto — basta molto meno tempo
-        time.sleep(0.4)
+        # ✅ Era già aperto — diamo tempo a Windows di portarlo in primo piano
+        time.sleep(1.2)
     else:
-        # Prima apertura — aspetta di più ma in modo dinamico
-        time.sleep(1.5)
+        # Prima apertura — aspetta di più
+        time.sleep(3.5)
         _whatsapp_aperto = True
+    
+    # Riporta in primo piano IDIS per permettere all'utente di vedere la richiesta e confermare
+    _attiva_finestra_idis()
 
 def _attiva_finestra_whatsapp():
     """Cerca e mette in primo piano la finestra di WhatsApp."""
@@ -37,10 +40,25 @@ def _attiva_finestra_whatsapp():
             if w.isMinimized:
                 w.restore()
             w.activate()
-            time.sleep(0.3)
+            time.sleep(0.6)
             return True
     except Exception as e:
         print(f"⚠️ Errore focus WhatsApp: {e}")
+    return False
+
+def _attiva_finestra_idis():
+    """Cerca e mette in primo piano la finestra dell'app IDIS."""
+    try:
+        finestre = gw.getWindowsWithTitle('IDIS')
+        for w in finestre:
+            if w.title == 'IDIS':
+                if w.isMinimized:
+                    w.restore()
+                w.activate()
+                time.sleep(0.3)
+                return True
+    except Exception as e:
+        print(f"⚠️ Errore focus IDIS: {e}")
     return False
 
 @tool
@@ -87,36 +105,39 @@ def conferma_invio_whatsapp() -> str:
     try:
         # ✅ Assicura che WhatsApp sia in primo piano prima di inviare tasti
         _attiva_finestra_whatsapp()
-        time.sleep(0.3)
+        time.sleep(0.6)
 
         # Chiudi ricerche aperte
         pyautogui.press('esc')
-        time.sleep(0.15)  # ✅ ridotto da 0.2s
+        time.sleep(0.3)
 
         # Apri ricerca
         pyautogui.hotkey('ctrl', 'f')
-        time.sleep(0.3)   # ✅ ridotto da 0.5s
+        time.sleep(0.6)
 
         # Pulisci e cerca contatto
         pyautogui.hotkey('ctrl', 'a')
         pyautogui.press('backspace')
         _scrivi_testo(contatto)
-        time.sleep(0.6)   # ✅ ridotto da 1.0s — sufficiente per i risultati
+        time.sleep(1.2)   # Attesa maggiore per i risultati di ricerca
 
         # Seleziona primo risultato
         pyautogui.press('down')
-        time.sleep(0.15)  # ✅ ridotto da 0.2s
+        time.sleep(0.3)
         pyautogui.press('enter')
-        time.sleep(0.3)   # ✅ ridotto da 0.5s
+        time.sleep(0.6)
 
         # Scrivi e invia
         _scrivi_testo(testo)
-        time.sleep(0.2)   # ✅ ridotto da 0.3s
+        time.sleep(0.4)
         pyautogui.press('enter')
 
         # Pulisci stato
         _messaggio_in_attesa["contatto"] = None
         _messaggio_in_attesa["testo"] = None
+
+        # Riporta in primo piano IDIS dopo aver inviato il messaggio
+        _attiva_finestra_idis()
 
         return f"Messaggio inviato a {contatto}."
 

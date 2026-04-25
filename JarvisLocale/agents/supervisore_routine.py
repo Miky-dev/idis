@@ -17,6 +17,7 @@ import threading
 import time
 import json
 import os
+from langchain_core.messages import SystemMessage, HumanMessage
 
 try:
     import winsound
@@ -210,7 +211,6 @@ def _genera_consiglio_llm(titolo_evento: str) -> str:
 
     def _chiedi():
         try:
-            from langchain_core.messages import SystemMessage, HumanMessage
             prompt = [
                 SystemMessage(content="/no_think\nSei IDIS. Rispondi in UNA sola frase breve in italiano. Niente emoji."),
                 HumanMessage(content=f"L'utente ha '{titolo_evento}' tra 15 minuti. Dai un consiglio pratico brevissimo.")
@@ -316,7 +316,6 @@ def _controlla_calendario():
                                     "Formula una sola frase di avviso cordiale. Digli che è ora di prepararsi, riassumi il meteo e "*
                                     "suggerisci cosa indossare in base alla temperatura."
                                 )
-                                from langchain_core.messages import SystemMessage, HumanMessage
                                 msg_vocale = f"Tra mezz'ora hai l'impegno: {t}. Fuori ci sono {meteo_str}."
                                 
                                 if _llm:

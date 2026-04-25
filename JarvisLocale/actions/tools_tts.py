@@ -40,7 +40,7 @@ _SEPARATORI = re.compile(r'(?<=[.!?;:])\s+')
 _MIN_CHARS_VIRGOLA = 20   # flush su virgola solo se buffer >= N chars
 
 # ── Stato globale ────────────────────────────────────────────────────────────
-_kokoro: "Kokoro" | None = None
+_kokoro = None
 _kokoro_lock           = threading.Lock()
 _tts_abilitato         = True
 
@@ -74,7 +74,7 @@ def _carica_kokoro() -> None:
         _tts_abilitato = False
 
 
-def _get_kokoro() -> "Kokoro" | None:
+def _get_kokoro():
     global _kokoro
     if _kokoro is None and _tts_abilitato:
         with _kokoro_lock:

@@ -54,21 +54,29 @@ except:
 llm_provider = os.getenv("LLM_PROVIDER", "ollama").lower()
 model_local = os.getenv("MODEL_LOCAL", "qwen3:8b")
 model_remote = os.getenv("MODEL_REMOTE", "gemini-2.0-flash-lite")
+model_groq = os.getenv("MODEL_GROQ", "llama-3.3-70b-versatile")
 
 THINKING_BUDGET_MAP = {"low": 1024, "medium": 8192, "high": 32768}
 thinking_budget_key = os.getenv("OLLAMA_THINKING_BUDGET", "low")
 thinking_budget = THINKING_BUDGET_MAP.get(thinking_budget_key, 1024)
 
 if llm_provider == "ollama":
-    print(f"⚡ Avvio IDIS con modello LOCALE: {model_local} [think budget: {thinking_budget_key}]")
+    print(f"Avvio IDIS con modello LOCALE: {model_local} [think budget: {thinking_budget_key}]")
     llm = ChatOllama(
         model=model_local,
         temperature=0.1,
         num_ctx=4096,
         extra_body={"think": True, "thinking_budget": thinking_budget},
     )
+elif llm_provider == "groq":
+    print(f"Avvio IDIS con modello GROQ: {model_groq}")
+    llm = ChatGroq(
+        model=model_groq,
+        temperature=0.1,
+        api_key=os.getenv("GROQ_API_KEY"),
+    )
 else:
-    print(f"🚀 Avvio IDIS con modello REMOTO (Google): {model_remote}")
+    print(f"Avvio IDIS con modello REMOTO (Google): {model_remote}")
     llm = ChatGoogleGenerativeAI(model=model_remote)
 
 # ✅ [OPT] llm_veloce ora punta alla stessa istanza per evitare switch di contesto Ollama inutili.

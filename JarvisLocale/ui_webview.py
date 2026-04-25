@@ -9,7 +9,7 @@ import os
 import json
 import time
 import requests
-from logica_chat import (
+from agents.logica_chat import (
     elabora_risposta,
     gestisci_conferma_whatsapp,
     avvia_background,
@@ -74,7 +74,7 @@ class IDISApi:
 
     def get_dati_dashboard(self) -> dict:
         """Restituisce tutti i dati necessari alla dashboard in un colpo solo."""
-        from logica_chat import eventi_precaricati as ev
+        from agents.logica_chat import eventi_precaricati as ev
         import actions.tools_location as tl
         sveglie = []
         try:
@@ -101,7 +101,7 @@ class IDISApi:
 
     def reset_chat(self) -> None:
         """Azzera la cronologia chat."""
-        from logica_chat import cronologia_chat
+        from agents.logica_chat import cronologia_chat
         cronologia_chat.clear()
 
     def apri_meteo_browser(self) -> None:
@@ -255,7 +255,7 @@ class IDISApi:
         _ultimo_ev = None
         while self._window is not None:
             try:
-                from logica_chat import eventi_precaricati as ev
+                from agents.logica_chat import eventi_precaricati as ev
                 if ev != _ultimo_ev and "Non sono ancora" not in ev and "Caricamento" not in ev:
                     self._js("aggiornaCalendario", ev)
                     print("📅 Calendario precaricato inviato alla Dashboard.")
@@ -293,7 +293,7 @@ def avvia_ui():
 
     window = webview.create_window(
         title="IDIS",
-        url=f"file:///{html_path}".replace("\\", "/"),
+        url=html_path,
         js_api=api,
         width=1200,
         height=800,
